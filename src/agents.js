@@ -4,18 +4,30 @@
  *
  * Detection signals per agent: a home dot-folder, a binary on PATH, or an
  * application folder. An agent is "installed" when any signal matches.
+ *
+ * `shared: true` marks a cross-tool convention (such as ~/.agents/skills)
+ * rather than a product: it is listed only when it actually holds skills and
+ * never gets an empty placeholder drawer.
  */
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { loadAgentSettings } from "./settings.js";
 
-const AGENTS = [
+const BUILT_IN = [
   { id: "claude", label: "Claude Code", folders: [".claude"], bins: ["claude"], userSkills: ".claude/skills", projectSkills: [".claude/skills"] },
   { id: "copilot", label: "GitHub Copilot", folders: [".copilot"], bins: ["copilot", "github-copilot-cli"], apps: [".vscode/extensions"], appMatch: /github\.copilot/i, userSkills: ".copilot/skills", projectSkills: [".github/skills"] },
+  {
+    id: "m365",
+    label: "Microsoft 365 Copilot",
+    folders: [".m365", ".microsoft365agents", ".fx", ".copilotstudio"],
+    bins: ["m365", "atk", "teamsfx", "pac"],
+    userSkills: ".m365/skills",
+    projectSkills: [".m365/skills", ".microsoft365agents/skills", "appPackage/skills"],
+  },
   { id: "cursor", label: "Cursor", folders: [".cursor"], bins: ["cursor"], userSkills: ".cursor/skills", projectSkills: [".cursor/skills"] },
   { id: "codex", label: "Codex", folders: [".codex"], bins: ["codex"], userSkills: ".codex/skills", projectSkills: [".codex/skills"] },
   { id: "gemini", label: "Gemini", folders: [".gemini"], bins: ["gemini"], userSkills: ".gemini/skills", projectSkills: [".gemini/skills"] },
-  { id: "agents", label: "Agents (shared)", folders: [".agents"], bins: [], userSkills: ".agents/skills", projectSkills: [".agents/skills"] },
   { id: "windsurf", label: "Windsurf", folders: [".windsurf", ".codeium"], bins: ["windsurf"], userSkills: ".windsurf/skills", projectSkills: [".windsurf/skills"] },
   { id: "kiro", label: "Kiro", folders: [".kiro"], bins: ["kiro"], userSkills: ".kiro/skills", projectSkills: [".kiro/skills"] },
   { id: "opencode", label: "OpenCode", folders: [".opencode", ".config/opencode"], bins: ["opencode"], userSkills: ".opencode/skills", projectSkills: [".opencode/skills"] },
@@ -31,23 +43,51 @@ const AGENTS = [
   { id: "qwen", label: "Qwen Code", folders: [".qwen"], bins: ["qwen"], userSkills: ".qwen/skills", projectSkills: [".qwen/skills"] },
   { id: "augment", label: "Augment", folders: [".augment"], bins: ["auggie"], userSkills: ".augment/skills", projectSkills: [".augment/skills"] },
   { id: "vscode", label: "VS Code", folders: [], bins: ["code"], userSkills: "", projectSkills: [] },
+  // Cross-tool conventions: shown only when they hold skills, never placeheld.
+  { id: "agents", label: "Agents (shared)", shared: true, folders: [".agents"], bins: [], userSkills: ".agents/skills", projectSkills: [".agents/skills"] },
 ];
 
-const FOLDER_TO_AGENT = new Map();
-for (const a of AGENTS) {
-  for (const f of a.folders) FOLDER_TO_AGENT.set(f.split("/").pop(), a);
-  if (a.userSkills) FOLDER_TO_AGENT.set(a.userSkills.split("/")[0], a);
-  for (const p of a.projectSkills) FOLDER_TO_AGENT.set(p.split("/")[0], a);
+/** Built-ins plus the user's custom agents. */
+export function allAgents(settings = loadAgentSettings()) {
+  const custom = (settings.custom || []).map((c) => ({
+    id: c.id,
+    label: c.label || c.id,
+    custom: true,
+    folders: [],
+    bins: [],
+    userSkillsAbs: c.userSkills,
+    userSkills: c.userSkills,
+    projectSkills: c.projectSkills || [],
+  }));
+  const byId = new Map(BUILT_IN.map((a) => [a.id, a]));
+  for (const c of custom) byId.set(c.id, { ...(byId.get(c.id) || {}), ...c });
+  return [...byId.values()];
 }
-FOLDER_TO_AGENT.set(".github", AGENTS.find((a) => a.id === "copilot"));
-FOLDER_TO_AGENT.set(".vscode", AGENTS.find((a) => a.id === "vscode"));
+
+function folderIndex(agents) {
+  const map = new Map();
+  const put = (folder, agent) => {
+    const key = String(folder || "").split("/")[0].toLowerCase();
+    if (key && !map.has(key)) map.set(key, agent);
+  };
+  for (const a of agents) {
+    for (const f of a.folders || []) put(f, a);
+    if (a.userSkills && !a.userSkillsAbs) put(a.userSkills, a);
+    for (const p of a.projectSkills || []) put(p, a);
+  }
+  const copilot = agents.find((a) => a.id === "copilot");
+  if (copilot) map.set(".github", copilot);
+  const vscode = agents.find((a) => a.id === "vscode");
+  if (vscode) map.set(".vscode", vscode);
+  return map;
+}
 
 const pick = (a) => ({ id: a.id, label: a.label });
 
-export function agentForFolder(folderName) {
+export function agentForFolder(folderName, agents = allAgents()) {
   const raw = String(folderName || "");
   const key = raw.startsWith(".") ? raw : `.${raw}`;
-  const hit = FOLDER_TO_AGENT.get(key.toLowerCase()) || FOLDER_TO_AGENT.get(key);
+  const hit = folderIndex(agents).get(key.toLowerCase());
   if (hit) return pick(hit);
   const bare = key.slice(1).toLowerCase();
   if (bare === "skills") return { id: "project", label: "Project (bare skills/)" };
@@ -56,10 +96,14 @@ export function agentForFolder(folderName) {
 }
 
 /** Agent for an arbitrary drawer root path: first dot-folder segment wins. */
-export function agentForPath(root) {
+export function agentForPath(root, agents = allAgents()) {
+  const resolved = path.resolve(String(root));
+  for (const a of agents) {
+    if (a.userSkillsAbs && path.resolve(a.userSkillsAbs) === resolved) return pick(a);
+  }
   const parts = String(root).split(/[\\/]+/).filter(Boolean);
   for (let i = parts.length - 1; i >= 0; i -= 1) {
-    if (parts[i].startsWith(".") && parts[i].length > 1) return agentForFolder(parts[i]);
+    if (parts[i].startsWith(".") && parts[i].length > 1) return agentForFolder(parts[i], agents);
   }
   if (parts[parts.length - 1] === "skills") return { id: "project", label: "Project (bare skills/)" };
   return { id: "other", label: "Other" };
@@ -98,34 +142,44 @@ function appMatch(home, a) {
 
 /**
  * Which agents are present on this machine, with the evidence.
- * @returns {Array<{id,label,installed:boolean,via:string[],userSkills:string|null,projectSkills:string[]}>}
+ * Hidden agents are returned with `hidden: true` so settings can show them.
  */
-export function detectAgents({ home = os.homedir(), envPath = process.env.PATH } = {}) {
-  return AGENTS.map((a) => {
+export function detectAgents({ home = os.homedir(), envPath = process.env.PATH, settings = loadAgentSettings() } = {}) {
+  const hidden = new Set(settings.hidden || []);
+  return allAgents(settings).map((a) => {
     const via = [];
-    for (const f of a.folders) {
-      const p = path.join(home, f);
+    for (const f of a.folders || []) {
       try {
-        if (fs.statSync(p).isDirectory()) via.push(`~/${f}`);
+        if (fs.statSync(path.join(home, f)).isDirectory()) via.push(`~/${f}`);
       } catch {
         /* missing */
       }
     }
-    for (const b of a.bins) {
-      const p = onPath(b, envPath);
-      if (p) via.push(`${b} on PATH`);
+    for (const b of a.bins || []) {
+      if (onPath(b, envPath)) via.push(`${b} on PATH`);
     }
     const app = appMatch(home, a);
     if (app) via.push(path.relative(home, app).replace(/\\/g, "/"));
+    const userSkills = a.userSkillsAbs || (a.userSkills ? path.join(home, a.userSkills) : null);
+    if (a.userSkillsAbs) {
+      try {
+        if (fs.statSync(a.userSkillsAbs).isDirectory()) via.push(a.userSkillsAbs);
+      } catch {
+        /* missing */
+      }
+    }
     return {
       id: a.id,
       label: a.label,
       installed: via.length > 0,
+      shared: Boolean(a.shared),
+      custom: Boolean(a.custom),
+      hidden: hidden.has(a.id),
       via,
-      userSkills: a.userSkills ? path.join(home, a.userSkills) : null,
-      projectSkills: a.projectSkills,
+      userSkills,
+      projectSkills: a.projectSkills || [],
     };
   });
 }
 
-export const KNOWN_AGENTS = AGENTS;
+export const KNOWN_AGENTS = BUILT_IN;

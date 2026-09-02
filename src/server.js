@@ -17,6 +17,7 @@ import {
   agentPresence,
 } from "./scan.js";
 import { overlapPairs } from "./overlap.js";
+import { loadAgentSettings, saveAgentSettings } from "./settings.js";
 import { diffLines } from "./diff.js";
 import { listStore, stash, restore, purge, purgeAll, storeRoot } from "./store.js";
 import { exportManifest, importManifest, parseManifest } from "./manifest.js";
@@ -533,6 +534,12 @@ export function createApp(options = {}) {
 
   app.get("/api/drawers", wrap(() => getIndex().drawers));
   app.get("/api/agents", wrap(() => agentPresence(opts.home || HOME)));
+  app.get("/api/agents/settings", wrap(() => ({ ...loadAgentSettings(), agents: agentPresence(opts.home || HOME) })));
+  app.put("/api/agents/settings", wrap((req) => {
+    const saved = saveAgentSettings(req.body || {});
+    invalidate();
+    return { ...saved, agents: agentPresence(opts.home || HOME) };
+  }));
 
   app.post("/api/drawers/open", wrap((req) => {
     const index = getIndex();

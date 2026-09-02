@@ -56,10 +56,10 @@ Requires Node 20+. `git` is needed only for installing skills from GitHub.
 
 ## The web UI
 
-- **Left**: agents that were found, each with its drawers nested underneath (user, plugin, builtin, project). Click an agent to see everything it loads, or a drawer for just that folder. Quick filters (lint problems, risk findings, duplicates, disabled), sort (drawer, name, recently modified, recently added, largest, riskiest, most lint).
-- **Middle**: the skills, with badges for lint status, risk level, identical copies, symlinks, single-file skills, project scope and tool-managed drawers. Mark several to trash, disable or export them together.
+- **Left**: agents that were found, each with its drawers nested underneath (user, plugin, builtin, project). Click an agent to see everything it loads, or a drawer for just that folder; "edit" beside the heading shows, hides or adds agents. Quick filters (lint problems, risk findings, duplicates, disabled), sort (drawer, name, recently modified, recently added, largest, riskiest, most lint).
+- **Middle**: the skills, grouped into collapsible per-agent sections (untick "Group by agent" for a flat list), with badges for lint status, risk level, identical copies, symlinks, single-file skills, project scope and tool-managed drawers. Mark several to trash, disable or export them together.
 - **Right**: the selected skill. Toolbar: Disable, Edit, Rename, Copy to…, Move to…, Archive, Open in editor, Export, Trash. Tabs for the rendered body, raw source, frontmatter and signals (modified / added / size / hash / copies), files, health (lint problems + risk findings), and Edit, which has a metadata form and a file editor with New file and Delete file.
-- **Top**: New, Install, Import, Export, Issues (all conflicts, lint and risk findings in one place), Archive, Trash, rescan, theme, help.
+- **Top**: New, Install, **Checks** (Quality report, Overlap report, Issues) and **Shelf** (Archived, Deleted, Import, Export), plus AI settings, rescan, theme and help. The per-skill Archive, Trash and Export buttons live on the skill itself; the menus hold the places those skills go.
 
 ### Moving skills between agents
 
@@ -69,7 +69,11 @@ Every agent reads its own folder, so a skill written for Claude Code is invisibl
 
 The sidebar lists an agent when it is installed on this machine (a home folder such as `~/.copilot` or `~/.claude`, a CLI such as `codex` on your PATH, or a VS Code extension such as GitHub Copilot) or when a skills folder for it already exists. Hover an agent name to see how it was detected. An installed agent with no skills folder yet shows an empty, italic drawer; copying, installing or creating a skill there makes the folder. Agents that are neither installed nor holding skills stay hidden. Click the chevron to close or open a group; the choice is remembered.
 
-Supported agents include Claude Code, GitHub Copilot (`~/.copilot/skills`, `.github/skills`), Cursor, Codex, Gemini, Windsurf, Kiro, OpenCode, Amp, Continue, Cline, Roo Code, Aider, Goose, Zed, Junie, Trae, Qwen Code, Augment and the shared `.agents` folder.
+Supported agents include Claude Code, GitHub Copilot (`~/.copilot/skills`, `.github/skills`), Microsoft 365 Copilot (`~/.m365/skills`, `.m365/skills`, `.microsoft365agents/skills`, `appPackage/skills`), Cursor, Codex, Gemini, Windsurf, Kiro, OpenCode, Amp, Continue, Cline, Roo Code, Aider, Goose, Zed, Junie, Trae, Qwen Code and Augment.
+
+`~/.agents/skills` is a cross-tool convention rather than a product, so it appears only when it actually holds skills and never as an empty drawer.
+
+**Your own agents.** Click "edit" beside AGENTS to show or hide any agent, or to add one: a name, an absolute skills folder, and optional project-relative folders. Custom agents are scanned, grouped and written to exactly like the built-ins, and are stored in `~/.skill-drawer/agents.json`. Use this when a tool keeps its skills somewhere Skill Drawer does not know about yet.
 
 ### Quality check
 

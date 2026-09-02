@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.5.0
+
+- **Toolbar without duplicate labels.** The top bar had `Export`, `Archive` and `Trash`, which also exist as buttons on a skill and mean something different there (a place versus an action). They now live in two menus: **Checks** (Quality report, Overlap report, Issues) and **Shelf** (Archived, Deleted, Import, Export). Thirteen buttons become six, and the search box no longer gets squeezed out on a narrow window.
+- **Checkboxes only when you need them.** A skill's checkbox is invisible until you hover the card, mark something, or focus it with the keyboard. Marking with `x`, Select all and the bulk bar are unchanged.
+- **Skill list grouped by agent.** The list has collapsible per-agent sections showing the count and how many are marked; the collapsed set is remembered, and navigating into a closed group opens it. Untick "Group by agent" for a flat list.
+- **"Agents (shared)" is gone unless it holds skills.** `~/.agents/skills` is a cross-tool convention, not a product, so it no longer gets an empty placeholder drawer.
+- **Agents settings.** "edit" beside the AGENTS heading opens a panel to show or hide any agent, and to add your own: give it a name, an absolute skills folder and optional project folders, and it is scanned like any built-in. Stored in `~/.skill-drawer/agents.json`.
+- **Microsoft 365 Copilot.** Detected from `~/.m365`, `~/.microsoft365agents`, `~/.fx`, `~/.copilotstudio` or the `m365`, `atk`, `teamsfx` and `pac` CLIs; user drawer `~/.m365/skills`, project drawers `.m365/skills`, `.microsoft365agents/skills` and `appPackage/skills`. Microsoft's own layout is still settling, so use a custom agent if your setup differs.
+- **Fixed:** the bulk action bar overflowed its column and its buttons slid under the detail pane, where they could not be clicked.
+- **Fixed:** a custom agent whose folder already existed was listed as an empty placeholder because only `~/.<tool>/skills` paths were scanned.
+
 ## 0.4.0
 
 - **Only agents that are actually here.** Skill Drawer now detects installed agents (home folder such as `~/.copilot`, a binary on PATH such as `codex`, or a VS Code extension such as GitHub Copilot) and lists an agent only when it is installed or already holds skills. Installed agents without a skills folder get a placeholder drawer that is created on first copy, install or "Create & open folder".

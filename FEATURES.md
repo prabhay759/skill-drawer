@@ -63,6 +63,23 @@ Skill Drawer started from a review of [skill-cabinet](https://github.com/subsy/s
 | **Skill overlap check, deep** | `src/overlap.js`: description-weighted pairwise overlap with name and body components, identical-copy detection, same drawer / same agent / across agents tags; `GET /api/overlap` with threshold, agent scope and id filter; Overlap panel with threshold slider, per-pair AI verdict, top-10 AI batch; `skill-drawer overlap`. |
 | **Comparison, deep** | Comparison view combines the AI verdict with static overlap and quality, a colour line diff of both SKILL.md files (`src/diff.js`, `GET /api/skills/:id/diff`), and quick actions: copy A's description to B or B's to A, and trash the skill the model recommends dropping. |
 
+## Added in 0.5.0
+
+| Request | What was built |
+|---|---|
+| **Remove the duplicated top-bar items** | `Export`, `Archive` and `Trash` existed both in the top bar (a place) and on a skill (an action). The top bar now has two menus — **Checks** (Quality, Overlap, Issues) and **Shelf** (Archived, Deleted, Import, Export) — cutting thirteen controls to six and keeping the search box from being squeezed out. |
+| **Do we need the checkbox on the skill item?** | Kept, but no longer permanent clutter: it fades in on card hover, when anything is marked, or on keyboard focus. `x`, Select all and the bulk bar are unchanged. |
+| **"Agents (shared)" not needed** | `.agents` is marked `shared: true` — a cross-tool convention, never a product — so it gets no placeholder drawer and appears only when it holds skills. Any agent can also be hidden outright from the new Agents settings panel (`~/.skill-drawer/agents.json`). |
+| **Collapsible agents for skills** | The skill list is grouped into per-agent sections with a chevron, a count and a marked count. Collapse state persists, and opening a skill inside a closed group expands it. "Group by agent" toggles back to a flat list. |
+| **Microsoft 365 Copilot skills** | New built-in agent: detection from `~/.m365`, `~/.microsoft365agents`, `~/.fx`, `~/.copilotstudio` and the `m365` / `atk` / `teamsfx` / `pac` CLIs; user drawer `~/.m365/skills`; project drawers `.m365/skills`, `.microsoft365agents/skills`, `appPackage/skills`. Because Microsoft's layout is still settling, the custom-agent feature covers any variation. |
+| **Custom agents** | `src/settings.js` stores user-defined agents (id, label, absolute user folder, project folders) and hidden agent ids. They are scanned at their absolute path, appear in the sidebar and grouping, and are valid targets for copy, move, install and import. |
+
+### Bugs found and fixed during this pass
+
+- The bulk action bar did not wrap, so on a narrow window its buttons overflowed the list column and sat underneath the detail pane, where clicks never reached them.
+- A custom agent whose folder already existed was reported as an empty placeholder, because only `~/.<tool>/skills` paths were covered by the home scan.
+- Agent presence was computed from the real home directory even when the server was started with an explicit `home`, so tests and sandboxed runs saw the wrong agents.
+
 ## Out of scope, on purpose
 
 - **Multi-user or remote access.** The server binds to 127.0.0.1 and has no auth; putting it on a network would need both.

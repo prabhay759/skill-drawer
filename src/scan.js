@@ -7,7 +7,8 @@ import { auditSkill } from "./audit.js";
 import { lintSkill } from "./lint.js";
 import { detectConflicts } from "./conflicts.js";
 import { listStore } from "./store.js";
-import { agentForFolder, agentForPath, detectAgents } from "./agents.js";
+import { agentForFolder, agentForPath, detectAgents, allAgents } from "./agents.js";
+import { loadAgentSettings } from "./settings.js";
 import { qualityScore } from "./quality.js";
 
 const SKIP_HOME_DOTDIRS = new Set([
@@ -52,16 +53,19 @@ export function findSkillFile(dir) {
  * @typedef {{id:string,label:string,root:string,kind:'user'|'builtin'|'plugin'|'project'|'extra',scope:'user'|'project',recursive:boolean,writable:boolean}} Drawer
  */
 
-export function discoverDrawers({ cwd = process.cwd(), extraRoots = [], project = true, home = HOME } = {}) {
+export function discoverDrawers({ cwd = process.cwd(), extraRoots = [], project = true, home = HOME, settings = loadAgentSettings() } = {}) {
   /** @type {Drawer[]} */
   const drawers = [];
   const seen = new Set();
+  const known = allAgents(settings);
+  const hidden = new Set(settings.hidden || []);
   const add = (id, label, root, kind, scope, recursive = false, writable = true, agent = null) => {
     if (!exists(root) || !isDir(root)) return;
     const resolved = real(root);
     if (seen.has(resolved)) return;
+    const a = agent || agentForPath(root, known);
+    if (hidden.has(a.id)) return;
     seen.add(resolved);
-    const a = agent || agentForPath(root);
     drawers.push({ id, label, root: resolved, kind, scope, recursive, writable, exists: true, agentId: a.id, agentLabel: a.label });
   };
 
@@ -76,7 +80,7 @@ export function discoverDrawers({ cwd = process.cwd(), extraRoots = [], project 
     if (!entry.name.startsWith(".") || SKIP_HOME_DOTDIRS.has(entry.name)) continue;
     const base = path.join(home, entry.name);
     const id = entry.name.slice(1);
-    const agent = agentForFolder(entry.name);
+    const agent = agentForFolder(entry.name, known);
     for (const folder of ["skills", "skill"]) {
       add(id, `~/${entry.name}/${folder}`, path.join(base, folder), "user", "user", false, true, agent);
     }
@@ -91,19 +95,33 @@ export function discoverDrawers({ cwd = process.cwd(), extraRoots = [], project 
       add("codex-plugins", "~/.codex/plugins", path.join(base, "plugins"), "plugin", "user", true, false, agent);
     }
   }
-  const gemini = agentForFolder(".gemini");
+  const gemini = agentForFolder(".gemini", known);
   add("gemini-antigravity", "~/.gemini/antigravity/skills", path.join(home, ".gemini/antigravity/skills"), "user", "user", false, true, gemini);
   add("gemini-antigravity-global", "~/.gemini/antigravity/global_skills", path.join(home, ".gemini/antigravity/global_skills"), "user", "user", false, true, gemini);
+
+  // Custom agents point at absolute folders that the home scan never reaches.
+  const homeRelative = (p) => (contained(p, home) ? `~/${path.relative(home, p).replace(/\\/g, "/")}` : p);
+  for (const a of known) {
+    if (!a.userSkillsAbs) continue;
+    add(a.id, homeRelative(a.userSkillsAbs), a.userSkillsAbs, "user", "user", false, true, { id: a.id, label: a.label });
+  }
+
+  const projectDirs = [...PROJECT_SKILL_DIRS];
+  for (const a of known) {
+    for (const rel of a.projectSkills || []) {
+      if (!projectDirs.some(([r]) => r === rel)) projectDirs.push([rel, a.id, { id: a.id, label: a.label }]);
+    }
+  }
 
   if (project && cwd) {
     // Walk up from cwd; every ancestor may hold project-local drawers.
     let current = path.resolve(cwd);
     for (let i = 0; i < 12; i += 1) {
       if (current === home) break;
-      for (const [rel, tool] of PROJECT_SKILL_DIRS) {
+      for (const [rel, tool, agent] of projectDirs) {
         const root = path.join(current, rel);
         const label = `${path.basename(current) || current}/${rel}`;
-        add(`project:${tool}:${current}`, label, root, "project", "project", false, true, agentForFolder(rel.split("/")[0]));
+        add(`project:${tool}:${current}`, label, root, "project", "project", false, true, agent || agentForFolder(rel.split("/")[0], known));
       }
       const parent = path.dirname(current);
       if (parent === current) break;
@@ -117,15 +135,17 @@ export function discoverDrawers({ cwd = process.cwd(), extraRoots = [], project 
 
   // Installed agents without a skills folder yet get a placeholder drawer, so
   // skills can be copied, installed or created there (the folder is made on
-  // first write). Agents that are neither installed nor holding skills are hidden.
-  const detected = detectAgents({ home });
+  // first write). Agents that are neither installed nor holding skills are
+  // hidden, as are shared conventions (they are folders, not products) and
+  // any agent the user has hidden in settings.
+  const detected = detectAgents({ home, settings });
   for (const a of detected) {
-    if (!a.installed || !a.userSkills) continue;
+    if (!a.installed || !a.userSkills || a.shared || a.hidden) continue;
     const resolved = path.resolve(a.userSkills);
     if (seen.has(resolved)) continue;
     seen.add(resolved);
-    const rel = path.relative(home, resolved).replace(/\\/g, "/");
-    drawers.push({ id: a.id, label: `~/${rel}`, root: resolved, kind: "user", scope: "user", recursive: false, writable: true, exists: false, agentId: a.id, agentLabel: a.label });
+    const label = homeRelative(resolved);
+    drawers.push({ id: a.id, label, root: resolved, kind: "user", scope: "user", recursive: false, writable: true, exists: false, agentId: a.id, agentLabel: a.label });
   }
   return drawers;
 }
@@ -302,12 +322,13 @@ function summarize(item) {
 
 function disabledSkills() {
   const out = [];
+  const known = allAgents();
   for (const entry of listStore("disabled")) {
     const payload = entry.payloadPath;
     const install = describeInstall(payload);
     const skillMd = install.file ? payload : findSkillFile(payload);
     if (!skillMd) continue;
-    const agent = agentForPath(entry.originalPath);
+    const agent = agentForPath(entry.originalPath, known);
     const drawer = { id: entry.drawerId, label: entry.drawerLabel, kind: "user", scope: "user", writable: true, agentId: agent.id, agentLabel: agent.label };
     const summary = summarize({ dir: payload, skillMd, drawer, ...install, file: install.file });
     if (!summary) continue;

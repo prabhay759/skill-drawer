@@ -120,10 +120,11 @@ pre { background: var(--bg-3); padding: 10px 12px; border-radius: var(--radius);
 
 .list-pane { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--line); }
 .list-head {
-  display: flex; justify-content: space-between; align-items: center; gap: 8px;
-  padding: 8px 12px; border-bottom: 1px solid var(--line); font-size: 13px; color: var(--fg-2); flex-wrap: wrap;
+  display: flex; justify-content: space-between; align-items: center; gap: 8px 12px;
+  padding: 8px 12px; border-bottom: 1px solid var(--line); font-size: 13px; color: var(--fg-2);
+  flex-wrap: wrap; overflow: hidden;
 }
-.bulk { display: flex; gap: 6px; align-items: center; }
+.bulk { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; min-width: 0; }
 .skill-list { overflow: auto; flex: 1; outline: none; }
 .skill-card {
   padding: 10px 12px; border-bottom: 1px solid var(--line); cursor: pointer; display: grid;
@@ -268,3 +269,41 @@ table.grid a { cursor: pointer; }
 .panel-tools { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
 .progress { height: 6px; background: var(--bg-3); border-radius: 3px; overflow: hidden; flex: 1; min-width: 120px; }
 .progress i { display: block; height: 100%; background: var(--accent); transition: width .2s; }
+
+/* Toolbar menus */
+.menu-wrap { position: relative; }
+.caret { font-size: 10px; color: var(--fg-3); }
+.menu {
+  position: absolute; right: 0; top: calc(100% + 4px); z-index: 40; min-width: 220px;
+  background: var(--bg-2); border: 1px solid var(--line); border-radius: var(--radius);
+  box-shadow: 0 12px 32px rgba(0,0,0,.35); padding: 4px; display: flex; flex-direction: column;
+}
+.menu button {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 12px; width: 100%;
+  background: none; border: 0; text-align: left; padding: 7px 10px; border-radius: 3px; cursor: pointer;
+}
+.menu button:hover { background: var(--bg-hover); }
+.menu .menu-hint { color: var(--fg-3); font-size: 11.5px; white-space: nowrap; }
+.menu-sep { height: 1px; background: var(--line); margin: 4px 2px; }
+.link-btn { background: none; border: 0; color: var(--accent); cursor: pointer; font-size: 11px; padding: 0 2px; text-transform: none; letter-spacing: 0; }
+.link-btn:hover { text-decoration: underline; }
+.side-heading { display: flex; justify-content: space-between; align-items: center; }
+
+/* Checkboxes appear on hover, or whenever a selection is active */
+.skill-card input[type="checkbox"] { opacity: 0; transition: opacity .1s; }
+.skill-card:hover input[type="checkbox"],
+.skill-card.marked input[type="checkbox"],
+.skill-list.selecting input[type="checkbox"],
+.skill-card input[type="checkbox"]:focus-visible { opacity: 1; }
+
+/* Skill list grouped by agent */
+.group-head {
+  position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 6px;
+  padding: 6px 12px; background: var(--bg-2); border-bottom: 1px solid var(--line);
+  font-size: 11px; text-transform: uppercase; letter-spacing: .07em; color: var(--fg-3);
+  cursor: pointer; width: 100%; text-align: left; border-left: 0; border-right: 0; border-top: 0;
+}
+.group-head:hover { background: var(--bg-hover); color: var(--fg-2); }
+.group-head .chev { transition: transform .12s; display: inline-block; }
+.group-head.closed .chev { transform: rotate(-90deg); }
+.group-head .count { margin-left: auto; text-transform: none; letter-spacing: 0; }

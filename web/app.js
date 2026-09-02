@@ -37,10 +37,16 @@
     ai: null,
     assessments: {},
     closedAgents: new Set(),
+    closedGroups: new Set(),
+    groupByAgent: true,
     comparisons: {},
   };
+  try { state.groupByAgent = localStorage.getItem("skill-drawer-group") !== "0"; } catch { /* ignore */ }
+  try { for (const id of JSON.parse(localStorage.getItem("skill-drawer-closed-groups") || "[]")) state.closedGroups.add(id); } catch { /* ignore */ }
   try { for (const id of JSON.parse(localStorage.getItem("skill-drawer-closed-agents") || "[]")) state.closedAgents.add(id); } catch { /* ignore */ }
   function persistClosed() { try { localStorage.setItem("skill-drawer-closed-agents", JSON.stringify([...state.closedAgents])); } catch { /* ignore */ } }
+  function persistGroup() { try { localStorage.setItem("skill-drawer-group", state.groupByAgent ? "1" : "0"); } catch { /* ignore */ } }
+  function persistGroups() { try { localStorage.setItem("skill-drawer-closed-groups", JSON.stringify([...state.closedGroups])); } catch { /* ignore */ } }
 
   /* ---------- API ---------- */
   async function api(path, opts = {}) {
@@ -210,12 +216,14 @@
       <div class="mono" style="margin-top:6px;font-size:11px">store: ${esc(state.data.storeHome)}</div>
       <div class="mono" style="font-size:11px">cwd: ${esc(state.data.cwd)}</div>`;
     const issues = c.conflicts + c.lintErrors + c.lintWarnings + c.risky;
-    $("#issue-count").hidden = !issues;
-    $("#issue-count").textContent = issues;
-    $("#trash-count").hidden = !c.trash;
-    $("#trash-count").textContent = c.trash;
-    $("#archive-count").hidden = !c.archived;
-    $("#archive-count").textContent = c.archived;
+    $("#checks-count").hidden = !issues;
+    $("#checks-count").textContent = issues;
+    $("#menu-issues-hint").textContent = issues ? `${issues} to review` : "none open";
+    const shelved = c.trash + c.archived;
+    $("#shelf-count").hidden = !shelved;
+    $("#shelf-count").textContent = shelved;
+    $("#menu-archived-hint").textContent = c.archived ? `${c.archived} shelved` : "empty";
+    $("#menu-trash-hint").textContent = c.trash ? `${c.trash} restorable` : "empty";
   }
 
   /* ---------- Filtering & list ---------- */
@@ -272,9 +280,21 @@
     return out.join("");
   }
 
+  function cardHtml(s) {
+    return `<div class="skill-card ${s.id === state.activeId ? "active" : ""} ${state.marked.has(s.id) ? "marked" : ""} ${s.disabled ? "disabled" : ""}" data-id="${s.id}">
+            <input type="checkbox" data-mark="${s.id}" ${state.marked.has(s.id) ? "checked" : ""} aria-label="Mark ${esc(s.name)}" />
+            <div>
+              <div class="name">${esc(s.name)} ${badges(s)}</div>
+              <div class="desc">${esc(s.description || "No description")}</div>
+              <div class="meta">${state.groupByAgent ? "" : `<span class="agent-chip">${esc(s.agentLabel)}</span>`}<span>${esc(s.drawerLabel)}</span><span title="${fmtDate(s.mtime)}">${ago(s.mtime)}</span><span>${fmtBytes(s.bytes)}</span>${s.origin ? `<span title="${esc(s.origin.url)}">${esc(s.origin.label)}</span>` : ""}</div>
+            </div>
+          </div>`;
+  }
+
   function renderList() {
     const list = $("#list");
     $("#list-summary").textContent = `${state.filtered.length} skill${state.filtered.length === 1 ? "" : "s"}`;
+    list.classList.toggle("selecting", state.marked.size > 0);
     if (!state.filtered.length) {
       const d = state.data.drawers.find((x) => x.id === state.drawer);
       const hint = d && d.exists === false
@@ -282,19 +302,34 @@
         : state.skills.length ? "Nothing matches." : "No skills found in any drawer. Install one or create a new skill.";
       list.innerHTML = `<div class="empty">${hint}</div>`;
       $("#open-drawer")?.addEventListener("click", () => api("/api/drawers/open", { method: "POST", body: { id: state.drawer } }).then(() => load(true)).catch((e) => toast(e.message, { kind: "err" })));
-    } else {
-      list.innerHTML = state.filtered
-        .map(
-          (s) => `<div class="skill-card ${s.id === state.activeId ? "active" : ""} ${state.marked.has(s.id) ? "marked" : ""} ${s.disabled ? "disabled" : ""}" data-id="${s.id}">
-            <input type="checkbox" data-mark="${s.id}" ${state.marked.has(s.id) ? "checked" : ""} aria-label="Mark ${esc(s.name)}" />
-            <div>
-              <div class="name">${esc(s.name)} ${badges(s)}</div>
-              <div class="desc">${esc(s.description || "No description")}</div>
-              <div class="meta"><span class="agent-chip">${esc(s.agentLabel)}</span><span>${esc(s.drawerLabel)}</span><span title="${fmtDate(s.mtime)}">${ago(s.mtime)}</span><span>${fmtBytes(s.bytes)}</span>${s.origin ? `<span title="${esc(s.origin.url)}">${esc(s.origin.label)}</span>` : ""}</div>
-            </div>
-          </div>`,
-        )
+    } else if (state.groupByAgent) {
+      const groups = [];
+      const byAgent = new Map();
+      for (const s of state.filtered) {
+        if (!byAgent.has(s.agentId)) {
+          byAgent.set(s.agentId, { id: s.agentId, label: s.agentLabel, skills: [] });
+          groups.push(byAgent.get(s.agentId));
+        }
+        byAgent.get(s.agentId).skills.push(s);
+      }
+      list.innerHTML = groups
+        .map((g) => {
+          const closed = state.closedGroups.has(g.id);
+          const marked = g.skills.filter((s) => state.marked.has(s.id)).length;
+          return `<button class="group-head ${closed ? "closed" : ""}" data-group="${esc(g.id)}" title="${closed ? "Open" : "Close"} this group">
+              <span class="chev">▾</span><span>${esc(g.label)}</span>
+              <span class="count">${marked ? `${marked} marked · ` : ""}${g.skills.length}</span>
+            </button>${closed ? "" : g.skills.map(cardHtml).join("")}`;
+        })
         .join("");
+      $$("[data-group]", list).forEach((b) => (b.onclick = () => {
+        const id = b.dataset.group;
+        if (state.closedGroups.has(id)) state.closedGroups.delete(id); else state.closedGroups.add(id);
+        persistGroups();
+        renderList();
+      }));
+    } else {
+      list.innerHTML = state.filtered.map(cardHtml).join("");
     }
     $$("[data-id]", list).forEach((card) => {
       card.onclick = (e) => {
@@ -317,6 +352,16 @@
     else state.marked.delete(id);
     const card = $(`.skill-card[data-id="${id}"]`);
     if (card) { card.classList.toggle("marked", on); $("input", card).checked = on; }
+    $("#list").classList.toggle("selecting", state.marked.size > 0);
+    if (state.groupByAgent) {
+      const s = state.skills.find((x) => x.id === id);
+      const head = s && $(`.group-head[data-group="${s.agentId}"] .count`);
+      if (head) {
+        const g = state.filtered.filter((x) => x.agentId === s.agentId);
+        const marked = g.filter((x) => state.marked.has(x.id)).length;
+        head.textContent = `${marked ? `${marked} marked · ` : ""}${g.length}`;
+      }
+    }
     renderBulk();
   }
 
@@ -335,6 +380,12 @@
     }
     state.activeId = id;
     if (!keepTab) state.tab = state.tab === "edit" ? "rendered" : state.tab;
+    const target = state.skills.find((x) => x.id === id);
+    if (state.groupByAgent && target && state.closedGroups.has(target.agentId)) {
+      state.closedGroups.delete(target.agentId);
+      persistGroups();
+      renderList();
+    }
     $$(".skill-card").forEach((c) => c.classList.toggle("active", c.dataset.id === id));
     $(`.skill-card[data-id="${id}"]`)?.scrollIntoView({ block: "nearest" });
     try {
@@ -1002,6 +1053,71 @@
     });
   }
 
+  async function agentSettingsDialog() {
+    let cfg;
+    try {
+      cfg = await api("/api/agents/settings");
+    } catch (err) {
+      return toast(err.message, { kind: "err" });
+    }
+    const counts = new Map((state.data?.agents || []).map((a) => [a.id, a.count]));
+    const rows = cfg.agents
+      .slice()
+      .sort((a, b) => Number(b.installed) - Number(a.installed) || a.label.localeCompare(b.label))
+      .map((a) => `<label class="check" title="${esc(a.via.join(", ") || "not detected on this machine")}">
+          <input type="checkbox" data-agent-show="${esc(a.id)}" ${a.hidden ? "" : "checked"} />
+          <span>${esc(a.label)}</span>
+          <span class="muted" style="font-size:11.5px">${a.custom ? "custom · " : a.shared ? "shared folder · " : ""}${a.installed ? esc(a.via[0] || "detected") : "not detected"}${counts.get(a.id) ? ` · ${counts.get(a.id)} skill${counts.get(a.id) === 1 ? "" : "s"}` : ""}</span>
+        </label>`)
+      .join("");
+    modal({
+      title: "Agents",
+      wide: true,
+      body: `<p class="muted">Unticked agents are hidden from the sidebar and the grouped list; their skills are not scanned. Agents that are neither installed nor holding skills never appear at all.</p>
+        <div class="section-title">Show</div>
+        <div style="columns:2;column-gap:24px">${rows}</div>
+        <div class="section-title">Your own agents</div>
+        <p class="muted" style="margin-top:0">Point Skill Drawer at any other tool's skills folder. The user folder must be an absolute path; project folders are relative to a repository root.</p>
+        <div id="custom-rows"></div>
+        <button class="btn btn-sm" id="add-custom">Add an agent</button>`,
+      footer: `<button class="btn" data-cancel>Cancel</button><button class="btn btn-primary" id="agents-save">Save</button>`,
+      onOpen(el, close) {
+        let custom = (cfg.custom || []).map((c) => ({ ...c }));
+        const renderCustom = () => {
+          $("#custom-rows", el).innerHTML = custom.length
+            ? custom.map((c, i) => `<div class="row" style="gap:8px;margin-bottom:8px">
+                <input style="flex:0 0 130px" placeholder="Name" value="${esc(c.label || "")}" data-c="label" data-i="${i}" />
+                <input style="flex:1" placeholder="/absolute/path/to/skills" value="${esc(c.userSkills || "")}" data-c="userSkills" data-i="${i}" />
+                <input style="flex:0 0 160px" placeholder=".tool/skills (project)" value="${esc((c.projectSkills || []).join(", "))}" data-c="projectSkills" data-i="${i}" />
+                <button class="btn btn-sm btn-danger" data-del="${i}">Remove</button>
+              </div>`).join("")
+            : `<p class="muted">None yet.</p>`;
+          $$("[data-c]", el).forEach((inp) => (inp.oninput = () => {
+            const c = custom[Number(inp.dataset.i)];
+            if (inp.dataset.c === "projectSkills") c.projectSkills = inp.value.split(",").map((x) => x.trim()).filter(Boolean);
+            else c[inp.dataset.c] = inp.value;
+            if (inp.dataset.c === "label") c.id = inp.value;
+          }));
+          $$("[data-del]", el).forEach((b) => (b.onclick = () => { custom.splice(Number(b.dataset.del), 1); renderCustom(); }));
+        };
+        renderCustom();
+        $("#add-custom", el).onclick = () => { custom.push({ id: "", label: "", userSkills: "", projectSkills: [] }); renderCustom(); };
+        $("[data-cancel]", el).onclick = close;
+        $("#agents-save", el).onclick = async () => {
+          try {
+            const hidden = $$("[data-agent-show]", el).filter((c) => !c.checked).map((c) => c.dataset.agentShow);
+            await api("/api/agents/settings", { method: "PUT", body: { hidden, custom: custom.filter((c) => (c.label || c.id) && c.userSkills) } });
+            close();
+            toast("Agents updated", { kind: "ok" });
+            await load(true);
+          } catch (err) {
+            toast(err.message, { kind: "err" });
+          }
+        };
+      },
+    });
+  }
+
   /* ---------- Quality & overlap panels ---------- */
   const sbar = (score, max = 100) => { const pct = Math.round((score / max) * 100); const cls = pct >= 70 ? "ok" : pct >= 50 ? "warn" : "err"; return `<span class="sbar ${cls}"><i style="width:${pct}%"></i></span>`; };
 
@@ -1337,7 +1453,7 @@
     const rows = [
       ["j / ↓", "next skill"], ["k / ↑", "previous skill"], ["Enter", "open selected"], ["/", "search"],
       ["x / Space", "mark / unmark"], ["a", "mark all visible"], ["d", "trash marked (or current)"],
-      ["e", "disable / enable current"], ["c / m", "copy / move to another agent"], ["n", "new skill"], ["i", "install"], ["t", "trash"], ["!", "issues"],
+      ["e", "disable / enable current"], ["c / m", "copy / move to another agent"], ["n", "new skill"], ["i", "install"], ["t", "deleted skills"], ["!", "issues"],
       ["1–7", "switch tab (7 = AI)"], ["r", "rescan"], ["Esc", "clear marks / close"], ["?", "this help"],
     ];
     modal({
@@ -1404,20 +1520,43 @@
   $("#bulk-copy").onclick = () => transferDialog([...state.marked], false);
   $("#bulk-move").onclick = () => transferDialog([...state.marked], true);
   $("#bulk-archive").onclick = () => archiveSkills([...state.marked]);
-  $("#btn-archive").onclick = archiveDialog;
   $("#btn-ai").onclick = aiSettingsDialog;
-  $("#btn-quality").onclick = qualityPanel;
-  $("#btn-overlap").onclick = overlapPanel;
   $("#bulk-compare").onclick = () => { const [a, b] = [...state.marked]; runComparison(a, b); };
   $("#bulk-export").onclick = () => exportDialog([...state.marked]);
   $("#bulk-clear").onclick = () => { state.marked.clear(); renderList(); };
   $("#btn-new").onclick = newSkillDialog;
   $("#btn-install").onclick = installDialog;
-  $("#btn-import").onclick = importDialog;
-  $("#btn-export").onclick = () => exportDialog(state.marked.size ? [...state.marked] : null);
-  $("#btn-issues").onclick = issuesDialog;
-  $("#btn-trash").onclick = trashDialog;
   $("#btn-help").onclick = helpDialog;
+  $("#btn-agent-settings").onclick = agentSettingsDialog;
+  $("#group-agent").checked = state.groupByAgent;
+  $("#group-agent").onchange = (e) => { state.groupByAgent = e.target.checked; persistGroup(); renderList(); };
+
+  const PANELS = {
+    quality: qualityPanel,
+    overlap: overlapPanel,
+    issues: issuesDialog,
+    archived: archiveDialog,
+    trashed: trashDialog,
+    import: importDialog,
+    export: () => exportDialog(state.marked.size ? [...state.marked] : null),
+  };
+  const closeMenus = () => $$(".menu").forEach((m) => {
+    m.hidden = true;
+    m.previousElementSibling?.setAttribute("aria-expanded", "false");
+  });
+  for (const [btn, menu] of [["#btn-checks", "#menu-checks"], ["#btn-shelf", "#menu-shelf"]]) {
+    $(btn).onclick = (e) => {
+      e.stopPropagation();
+      const el = $(menu);
+      const open = el.hidden;
+      closeMenus();
+      el.hidden = !open;
+      $(btn).setAttribute("aria-expanded", String(open));
+    };
+  }
+  $$("[data-panel]").forEach((b) => (b.onclick = () => { closeMenus(); PANELS[b.dataset.panel]?.(); }));
+  document.addEventListener("click", (e) => { if (!e.target.closest(".menu-wrap")) closeMenus(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeMenus(); }, true);
   $("#btn-refresh").onclick = () => load(true);
 
   const themeSel = $("#theme");
@@ -1434,6 +1573,9 @@
 
   load().then(() => {
     // Hide mutating controls in read-only mode.
-    if (state.data?.readOnly) for (const id of ["btn-new", "btn-install", "btn-import", "bulk-delete", "bulk-disable", "bulk-copy", "bulk-move", "bulk-archive"]) $(`#${id}`).hidden = true;
+    if (state.data?.readOnly) {
+      for (const id of ["btn-new", "btn-install", "bulk-delete", "bulk-disable", "bulk-copy", "bulk-move", "bulk-archive"]) $(`#${id}`).hidden = true;
+      $('[data-panel="import"]').hidden = true;
+    }
   });
 })();

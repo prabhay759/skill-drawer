@@ -20,13 +20,24 @@
     <div class="toolbar">
       <button id="btn-new" class="btn" title="Create a new skill (n)">New</button>
       <button id="btn-install" class="btn" title="Install from GitHub or a folder (i)">Install</button>
-      <button id="btn-import" class="btn" title="Import a manifest or bundle">Import</button>
-      <button id="btn-export" class="btn" title="Export manifest or bundle">Export</button>
-      <button id="btn-quality" class="btn" title="Quality check across skills">Quality</button>
-      <button id="btn-overlap" class="btn" title="Which skills trigger on the same requests">Overlap</button>
-      <button id="btn-issues" class="btn" title="Duplicates, conflicts, lint, risk (!)">Issues <span id="issue-count" class="pill" hidden></span></button>
-      <button id="btn-archive" class="btn" title="Archive shelf">Archive <span id="archive-count" class="pill" hidden></span></button>
-      <button id="btn-trash" class="btn" title="Trash (t)">Trash <span id="trash-count" class="pill" hidden></span></button>
+      <div class="menu-wrap">
+        <button id="btn-checks" class="btn" aria-haspopup="true" aria-expanded="false" title="Quality, overlap and issue reports">Checks <span id="checks-count" class="pill" hidden></span> <span class="caret">▾</span></button>
+        <div class="menu" id="menu-checks" hidden>
+          <button data-panel="quality">Quality report<span class="menu-hint">score every skill</span></button>
+          <button data-panel="overlap">Overlap report<span class="menu-hint">skills that trigger together</span></button>
+          <button data-panel="issues">Issues<span class="menu-hint" id="menu-issues-hint"></span></button>
+        </div>
+      </div>
+      <div class="menu-wrap">
+        <button id="btn-shelf" class="btn" aria-haspopup="true" aria-expanded="false" title="Archived and deleted skills, import and export">Shelf <span id="shelf-count" class="pill" hidden></span> <span class="caret">▾</span></button>
+        <div class="menu" id="menu-shelf" hidden>
+          <button data-panel="archived">Archived<span class="menu-hint" id="menu-archived-hint"></span></button>
+          <button data-panel="trashed">Deleted<span class="menu-hint" id="menu-trash-hint"></span></button>
+          <div class="menu-sep"></div>
+          <button data-panel="import">Import…<span class="menu-hint">manifest or bundle</span></button>
+          <button data-panel="export">Export…<span class="menu-hint">all or marked skills</span></button>
+        </div>
+      </div>
       <button id="btn-ai" class="btn" title="AI settings: model endpoint, model, API key">AI ⚙</button>
       <button id="btn-refresh" class="btn btn-icon" title="Rescan (r)">↻</button>
       <select id="theme" class="select" title="Theme">
@@ -43,7 +54,7 @@
   <div class="layout">
     <aside class="sidebar">
       <div class="side-section">
-        <div class="side-heading">Agents</div>
+        <div class="side-heading">Agents <button id="btn-agent-settings" class="link-btn" title="Show, hide or add agents">edit</button></div>
         <div id="drawers" class="drawer-list"></div>
       </div>
       <div class="side-section">
@@ -73,6 +84,7 @@
     <main class="list-pane">
       <div class="list-head">
         <label class="check"><input type="checkbox" id="select-all" /> <span id="list-summary">0 skills</span></label>
+        <label class="check" title="Group the list by agent"><input type="checkbox" id="group-agent" checked /> Group by agent</label>
         <div id="bulk" class="bulk" hidden>
           <span id="bulk-count"></span>
           <button class="btn btn-sm" id="bulk-copy" title="Copy to another agent">Copy to…</button>
