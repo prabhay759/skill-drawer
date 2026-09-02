@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en" data-theme="carbon">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Skill Drawer</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='3' y='5' width='26' height='10' rx='2' fill='%235b8def'/%3E%3Crect x='3' y='17' width='26' height='10' rx='2' fill='%233a5fb8'/%3E%3Crect x='13' y='9' width='6' height='2' rx='1' fill='%23fff'/%3E%3Crect x='13' y='21' width='6' height='2' rx='1' fill='%23fff'/%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo" aria-hidden="true"></span>
+      <span class="title">Skill Drawer</span>
+      <span id="readonly-badge" class="badge badge-warn" hidden>read-only</span>
+    </div>
+    <div class="search-wrap">
+      <input id="search" type="search" placeholder="Search name, description, path, frontmatter…  ( / )" autocomplete="off" />
+    </div>
+    <div class="toolbar">
+      <button id="btn-new" class="btn" title="Create a new skill (n)">New</button>
+      <button id="btn-install" class="btn" title="Install from GitHub or a folder (i)">Install</button>
+      <button id="btn-import" class="btn" title="Import a manifest or bundle">Import</button>
+      <button id="btn-export" class="btn" title="Export manifest or bundle">Export</button>
+      <button id="btn-issues" class="btn" title="Duplicates, conflicts, lint, risk (!)">Issues <span id="issue-count" class="pill" hidden></span></button>
+      <button id="btn-trash" class="btn" title="Trash (t)">Trash <span id="trash-count" class="pill" hidden></span></button>
+      <button id="btn-refresh" class="btn btn-icon" title="Rescan (r)">↻</button>
+      <select id="theme" class="select" title="Theme">
+        <option value="carbon">Carbon</option>
+        <option value="paper">Paper</option>
+        <option value="nord">Nord</option>
+        <option value="solar">Solar</option>
+        <option value="mono">Mono</option>
+      </select>
+      <button id="btn-help" class="btn btn-icon" title="Keyboard shortcuts (?)">?</button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="side-section">
+        <div class="side-heading">Drawers</div>
+        <div id="drawers" class="drawer-list"></div>
+      </div>
+      <div class="side-section">
+        <div class="side-heading">Show</div>
+        <label class="check"><input type="checkbox" id="f-lint" /> With lint problems</label>
+        <label class="check"><input type="checkbox" id="f-risk" /> With risk findings</label>
+        <label class="check"><input type="checkbox" id="f-dupes" /> With duplicates</label>
+        <label class="check"><input type="checkbox" id="f-disabled" checked /> Disabled skills</label>
+      </div>
+      <div class="side-section">
+        <div class="side-heading">Sort</div>
+        <select id="sort" class="select select-block">
+          <option value="drawer">Drawer, then name</option>
+          <option value="name">Name</option>
+          <option value="mtime">Recently modified</option>
+          <option value="ctime">Recently added</option>
+          <option value="size">Largest</option>
+          <option value="risk">Riskiest</option>
+          <option value="lint">Most lint problems</option>
+        </select>
+      </div>
+      <div class="side-section census" id="census"></div>
+    </aside>
+
+    <main class="list-pane">
+      <div class="list-head">
+        <label class="check"><input type="checkbox" id="select-all" /> <span id="list-summary">0 skills</span></label>
+        <div id="bulk" class="bulk" hidden>
+          <span id="bulk-count"></span>
+          <button class="btn btn-sm" id="bulk-disable">Disable</button>
+          <button class="btn btn-sm" id="bulk-export">Export</button>
+          <button class="btn btn-sm btn-danger" id="bulk-delete">Trash</button>
+          <button class="btn btn-sm" id="bulk-clear">Clear</button>
+        </div>
+      </div>
+      <div id="list" class="skill-list" tabindex="0"></div>
+    </main>
+
+    <section class="detail-pane" id="detail">
+      <div class="empty">Select a skill to read it. Press <kbd>?</kbd> for shortcuts.</div>
+    </section>
+  </div>
+
+  <div id="modal-root"></div>
+  <div id="toast-root" class="toasts"></div>
+
+  <script src="/vendor/marked/marked.min.js"></script>
+  <script src="/vendor/dompurify/dist/purify.min.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

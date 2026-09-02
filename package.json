@@ -1,0 +1,60 @@
+{
+  "name": "skill-drawer",
+  "version": "0.1.0",
+  "description": "Browse, lint, organise, trash-and-restore, disable, edit, export and install agent skills across every drawer on your machine (.agents, .claude, .codex, .cursor, .gemini, project-local and more).",
+  "type": "module",
+  "bin": {
+    "skill-drawer": "bin/skill-drawer.js"
+  },
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "files": [
+    "bin",
+    "src",
+    "web",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "start": "node bin/skill-drawer.js",
+    "dev": "node --watch bin/skill-drawer.js --no-open",
+    "test": "node --test test/*.test.js",
+    "lint": "node --check src/*.js bin/*.js web/app.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/prabhay759/skill-drawer.git"
+  },
+  "homepage": "https://github.com/prabhay759/skill-drawer#readme",
+  "bugs": {
+    "url": "https://github.com/prabhay759/skill-drawer/issues"
+  },
+  "keywords": [
+    "skills",
+    "agent-skills",
+    "claude",
+    "claude-code",
+    "cursor",
+    "codex",
+    "gemini",
+    "agents",
+    "skill-manager",
+    "npx"
+  ],
+  "author": "Prabhay Gupta",
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "dompurify": "^3.2.6",
+    "express": "^5.1.0",
+    "marked": "^15.0.12",
+    "yaml": "^2.8.1"
+  }
+}
