@@ -288,15 +288,24 @@
     renderList();
   }
 
+  /**
+   * Badges render for two shapes: the trimmed catalog entry used by the list
+   * (lintCount, copyCount, qualityScore) and the full skill used by the detail
+   * header (lintProblems, copies, quality). Read both.
+   */
   function badges(s) {
     const out = [];
+    const lintCount = s.lintCount ?? s.lintProblems?.length ?? 0;
+    const copyCount = s.copyCount ?? s.copies?.length ?? 0;
+    const qScore = s.qualityScore ?? s.quality?.score ?? null;
+    const qGrade = s.qualityGrade ?? s.quality?.grade ?? "";
     if (s.disabled) out.push(`<span class="badge badge-muted">disabled</span>`);
-    if (s.qualityScore !== null && s.qualityScore !== undefined) out.push(`<span class="qchip q-${esc(s.qualityGrade)}" title="Static quality score (Quality panel explains it)">Q${s.qualityScore}</span>`);
-    if (s.lint === "error") out.push(`<span class="badge badge-err" title="Lint errors">${s.lintCount} lint</span>`);
-    else if (s.lint === "warning") out.push(`<span class="badge badge-warn" title="Lint warnings">${s.lintCount} lint</span>`);
+    if (qScore !== null && qScore !== undefined) out.push(`<span class="qchip q-${esc(qGrade)}" title="Static quality score (Quality report explains it)">Q${esc(qScore)}</span>`);
+    if (s.lint === "error") out.push(`<span class="badge badge-err" title="Lint errors">${lintCount} lint</span>`);
+    else if (s.lint === "warning") out.push(`<span class="badge badge-warn" title="Lint warnings">${lintCount} lint</span>`);
     if (RISK[s.risk] >= 3) out.push(`<span class="badge badge-err">${esc(s.risk)} risk</span>`);
     else if (RISK[s.risk] >= 1) out.push(`<span class="badge badge-warn">${esc(s.risk)} risk</span>`);
-    if (s.copyCount) out.push(`<span class="badge badge-info" title="Identical copies elsewhere">${s.copyCount} cop${s.copyCount === 1 ? "y" : "ies"}</span>`);
+    if (copyCount) out.push(`<span class="badge badge-info" title="Identical copies elsewhere">${copyCount} cop${copyCount === 1 ? "y" : "ies"}</span>`);
     if (s.link) out.push(`<span class="badge">symlink</span>`);
     if (s.file) out.push(`<span class="badge">file</span>`);
     if (s.scope === "project") out.push(`<span class="badge badge-ok">project</span>`);

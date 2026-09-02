@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.2
+
+- **Fixed:** the detail header printed `undefined lint`, and silently omitted the quality chip and the identical-copies badge. Badges are rendered for two object shapes — the trimmed catalog entry behind each card and the full skill behind the header — and only the card shape carried `lintCount`, `copyCount` and `qualityScore`. Badges now read either shape, so a skill looks the same in the list and in its header.
+
 ## 0.5.1
 
 - **A top bar of five controls.** New, Install and the Shelf menu leave the top bar, which is now just search, **Checks**, AI settings, rescan, theme and help.
