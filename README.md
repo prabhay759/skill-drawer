@@ -77,6 +77,12 @@ Supported agents include Claude Code, GitHub Copilot (`~/.copilot/skills`, `.git
 
 **Your own agents.** Click "edit" beside AGENTS to show or hide any agent, or to add one: a name, an absolute skills folder, and optional project-relative folders. Custom agents are scanned, grouped and written to exactly like the built-ins, and are stored in `~/.skill-drawer/agents.json`. Use this when a tool keeps its skills somewhere Skill Drawer does not know about yet.
 
+### Keeping copies in sync
+
+Copy puts a skill in another agent's drawer; **Sync…** keeps it current. It lists every same-named skill in other agents, marks which already match, and overwrites the ones you tick with the version you are looking at. `skill-drawer sync <name> --dry-run` shows what would change without touching anything.
+
+The page reloads itself when skills change on disk, so editing a skill in your editor is reflected immediately. Reloading pauses while you have unsaved changes in the built-in editor.
+
 ### Quality check
 
 Every skill gets a static score out of 100 that needs no model: frontmatter validity (20), description as a trigger (30: length, says when to use it, has an action verb), instructions (25: length, headings, commands, steps, guardrails), safety (15, from the risk audit) and structure (10: broken links, reference files). The `Q` chip on each card shows it; sort by "Lowest quality first" to find the weak ones. The **Quality** button opens a table for the current agent scope with the two biggest deductions per skill and an **Assess all with AI** button that runs your configured model over each one with progress. `skill-drawer quality` prints the same table.
@@ -168,8 +174,8 @@ Options: `--port <n>`, `--no-open`, `--read-only`, `--root <dir>` (repeatable), 
 
 ## Export & import
 
-- **Manifest** (`skill-drawer export`): what you have — name, drawer, path, origin, content hash. Small, diffable, good for committing to dotfiles. On import, entries with a GitHub origin can be fetched with `--fetch`.
-- **Bundle** (`skill-drawer export --bundle`): the manifest plus every file's contents (text as UTF-8, binaries as base64). Restores byte-for-byte on another machine with no network access.
+- **Bundle** (the default, and the only thing the UI's Export produces): the manifest plus every file's contents (text as UTF-8, binaries as base64). Restores byte-for-byte on another machine with no network access.
+- **Manifest** (`skill-drawer export --manifest`): name, drawer, path, origin and content hash only. Small and diffable for dotfiles, but it restores nothing on its own — entries need a GitHub origin and `import --fetch`.
 
 ## What it looks for
 
@@ -217,7 +223,8 @@ See [FEATURES.md](FEATURES.md) for what is covered relative to skill-cabinet and
 ```
 npm install
 npm run dev      # server with --watch, no browser
-npm test         # node --test
+npm test         # node --test (browser tests skip without a browser)
+npm run test:ui  # browser tests only; needs: npx playwright install chromium
 ```
 
 No bundler: `web/` is served as-is, `marked` and `dompurify` are served from `node_modules`.

@@ -3,6 +3,10 @@ on:
   push:
     branches: [main]
   pull_request:
+env:
+  # Contributors and the matrix jobs do not need browser binaries; the browser
+  # job below installs Chromium explicitly and runs the UI tests.
+  PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
 jobs:
   test:
     runs-on: ${{ matrix.os }}
@@ -18,3 +22,16 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm test
+
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "0"
+      - run: npm run test:ui

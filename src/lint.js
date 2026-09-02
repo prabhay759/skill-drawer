@@ -37,7 +37,8 @@ export const LINT_LEVELS = { error: 3, warning: 2, info: 1, ok: 0 };
 
 export function lintSkill({ frontmatter, slug, body, source, fileOnly, present, error, files }) {
   const problems = [];
-  const push = (level, rule, message) => problems.push({ level, rule, message });
+  /** `fix` names a mechanical repair the server can apply on request. */
+  const push = (level, rule, message, fix) => problems.push({ level, rule, message, ...(fix ? { fix } : {}) });
   const fm = frontmatter || {};
 
   if (!present) {
@@ -48,16 +49,16 @@ export function lintSkill({ frontmatter, slug, body, source, fileOnly, present, 
 
   const name = fm.name;
   if (name === undefined || name === null || name === "") {
-    push("error", "name.missing", "Frontmatter is missing `name`");
+    push("error", "name.missing", "Frontmatter is missing `name`", fileOnly || !slug ? null : "name");
   } else if (typeof name !== "string") {
     push("error", "name.type", "`name` must be a string");
   } else {
     if (name.length > MAX_NAME) push("error", "name.length", `\`name\` is longer than ${MAX_NAME} characters`);
     if (!NAME_RE.test(name)) {
-      push("warning", "name.format", "`name` should be lowercase letters, digits and single hyphens");
+      push("warning", "name.format", "`name` should be lowercase letters, digits and single hyphens", "name");
     }
     if (!fileOnly && slug && name !== slug) {
-      push("warning", "name.mismatch", `\`name\` (${name}) does not match the folder name (${slug})`);
+      push("warning", "name.mismatch", `\`name\` (${name}) does not match the folder name (${slug})`, "name");
     }
   }
 

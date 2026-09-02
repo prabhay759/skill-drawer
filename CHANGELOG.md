@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.6.0
+
+**Added**
+
+- **Live reload.** The server watches every drawer and pushes changes over SSE, so editing a skill in your editor updates the page immediately. Reloads are skipped while you have unsaved edits open, and the watcher mutes itself briefly after Skill Drawer's own writes so they never echo back.
+- **Sync across agents.** `Sync…` on a skill overwrites its same-named copies in other agents with this version, showing which are already identical. `skill-drawer sync <name> [--dry-run]` on the command line.
+- **One-click lint fixes.** Mechanically repairable findings — a missing, badly formatted, or folder-mismatched frontmatter `name` — carry a **Fix** button in the Health tab and the Issues panel.
+- **Committed browser tests.** Eight Playwright tests run in CI and cover the defects unit tests cannot see: controls overflowing their column, element ids drifting out of the markup, badges rendered from the wrong object shape, and a full trash-and-restore round trip. They skip cleanly when no browser is installed, so `npm test` still works on a bare checkout.
+
+**Simplified**
+
+- **The Issues panel is capped.** Findings are grouped by kind, each group shows the first eight with a "show more" expander. A drawer with hundreds of overlaps is now readable.
+- **Two filters instead of four.** "With lint problems", "With risk findings" and "With duplicates" collapse into one **Needs attention**; the reports cover the detail.
+- **Three themes instead of five.** Auto (follows your system), Dark and Light. Nord, Solar and Mono are gone.
+- **One Export.** Always the full bundle, which is the only form that restores anywhere. `skill-drawer export --manifest` still writes the small form.
+- **Dropped the `~/.<tool>/skill` scan.** Inherited from skill-cabinet; no tool uses the singular folder.
+
 ## 0.5.2
 
 - **Fixed:** the detail header printed `undefined lint`, and silently omitted the quality chip and the identical-copies badge. Badges are rendered for two object shapes — the trimmed catalog entry behind each card and the full skill behind the header — and only the card shape carried `lintCount`, `copyCount` and `qualityScore`. Badges now read either shape, so a skill looks the same in the list and in its header.

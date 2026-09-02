@@ -86,6 +86,17 @@ Skill Drawer started from a review of [skill-cabinet](https://github.com/subsy/s
 |---|---|
 | **Drop New, Install and Shelf from the top bar** | The top bar is now search, Checks, AI, rescan, theme and help. New and Install moved to the list header and default to the drawer in view (previously always `~/.claude/skills`), with Import and Export under a `⋯` menu beside them. Archived and Deleted moved into a sidebar **Shelf** section together with Disabled, so every "place a skill can be" sits in one column. Trash restore stays visible because it is the undo for a destructive action, and the panels were renamed to Archived/Deleted so they no longer share a label with the Archive/Trash buttons on a skill. |
 
+## Added in 0.6.0
+
+| Change | What was built |
+|---|---|
+| **Live reload** | `src/watch.js` wraps `fs.watch` with recursive detection, a shallow fallback, debouncing, a watcher cap and a mute window so Skill Drawer's own writes do not echo. `GET /api/events` is an SSE stream; the page reloads on `changed`, and holds off while the editor has unsaved changes. |
+| **Sync across agents** | `GET/POST /api/skills/:id/sync` finds same-named skills in other writable drawers, reports which already match, and overwrites the chosen ones. UI dialog with per-target ticks and a destructive-action confirm; `skill-drawer sync --dry-run` on the CLI. |
+| **One-click lint fixes** | `src/lint.js` tags mechanically repairable findings with a `fix` key; `POST /api/skills/:id/fix` applies it. Covers `name.missing`, `name.format` and `name.mismatch` by rewriting the frontmatter name to the folder slug. Fix buttons appear in the Health tab and the Issues panel. |
+| **Committed browser tests** | `test/browser.test.js`: eight Playwright tests over load-without-errors, badge parity between card and header, overflow and clickability at three widths, trash-and-restore, one-click fix, sync, live reload and the Issues cap. They probe for a launchable browser and skip rather than fail without one; a CI job installs Chromium and runs them. |
+| **Capped Issues panel** | Findings group by kind, each capped at eight with a "show more" expander, so hundreds of overlap pairs stay readable. |
+| **Fewer filters, themes and export formats** | Four "Show" checkboxes become one **Needs attention**; five themes become Auto/Dark/Light with Auto following `prefers-color-scheme`; Export always writes a bundle in the UI, with `--manifest` kept on the CLI. The unused `~/.<tool>/skill` singular scan is gone. |
+
 ## Out of scope, on purpose
 
 - **Multi-user or remote access.** The server binds to 127.0.0.1 and has no auth; putting it on a network would need both.

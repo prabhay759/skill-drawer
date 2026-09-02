@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-theme="carbon">
+<html lang="en" data-theme="auto">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -29,11 +29,9 @@
       <button id="btn-ai" class="btn" title="AI settings: model endpoint, model, API key">AI ⚙</button>
       <button id="btn-refresh" class="btn btn-icon" title="Rescan (r)">↻</button>
       <select id="theme" class="select" title="Theme">
-        <option value="carbon">Carbon</option>
-        <option value="paper">Paper</option>
-        <option value="nord">Nord</option>
-        <option value="solar">Solar</option>
-        <option value="mono">Mono</option>
+        <option value="auto">Auto</option>
+        <option value="dark">Dark</option>
+        <option value="light">Light</option>
       </select>
       <button id="btn-help" class="btn btn-icon" title="Keyboard shortcuts (?)">?</button>
     </div>
@@ -51,9 +49,7 @@
       </div>
       <div class="side-section">
         <div class="side-heading">Show</div>
-        <label class="check"><input type="checkbox" id="f-lint" /> With lint problems</label>
-        <label class="check"><input type="checkbox" id="f-risk" /> With risk findings</label>
-        <label class="check"><input type="checkbox" id="f-dupes" /> With duplicates</label>
+        <label class="check" title="Lint problems, risk findings or identical copies elsewhere"><input type="checkbox" id="f-attention" /> Needs attention</label>
         <label class="check"><input type="checkbox" id="f-disabled" checked /> Disabled skills</label>
       </div>
       <div class="side-section">

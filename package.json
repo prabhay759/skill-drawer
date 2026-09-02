@@ -1,6 +1,6 @@
 {
   "name": "skill-drawer",
-  "version": "0.5.2",
+  "version": "0.6.0",
   "description": "Browse, lint, organise, trash-and-restore, disable, edit, export and install agent skills across every drawer on your machine (.agents, .claude, .codex, .cursor, .gemini, project-local and more).",
   "type": "module",
   "bin": {
@@ -23,7 +23,8 @@
     "start": "node bin/skill-drawer.js",
     "dev": "node --watch bin/skill-drawer.js --no-open",
     "test": "node --test test/*.test.js",
-    "lint": "node --check src/*.js bin/*.js scripts/*.js web/app.js"
+    "lint": "node --check src/*.js bin/*.js scripts/*.js web/app.js",
+    "test:ui": "node --test test/browser.test.js"
   },
   "engines": {
     "node": ">=20"
@@ -65,5 +66,8 @@
     "express": "^5.1.0",
     "marked": "^15.0.12",
     "yaml": "^2.8.1"
+  },
+  "devDependencies": {
+    "playwright": "^1.56.1"
   }
 }

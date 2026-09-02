@@ -28,7 +28,7 @@
     agent: "all",
     query: "",
     sort: "agent",
-    filters: { lint: false, risk: false, dupes: false, disabled: true },
+    filters: { attention: false, disabled: true },
     activeId: null,
     marked: new Set(),
     detail: null,
@@ -267,9 +267,7 @@
       if (!state.filters.disabled && s.disabled) return false;
       if (state.drawer !== "all" && s.drawerId !== state.drawer) return false;
       if (state.drawer === "all" && state.agent !== "all" && s.agentId !== state.agent) return false;
-      if (state.filters.lint && s.lint === "ok") return false;
-      if (state.filters.risk && s.risk === "none") return false;
-      if (state.filters.dupes && !s.copyCount) return false;
+      if (state.filters.attention && s.lint === "ok" && s.risk === "none" && !s.copyCount) return false;
       return matches(s, q);
     });
     const by = {
@@ -458,6 +456,7 @@
       if (s.writable && !s.disabled) actions.push(`<button class="btn btn-sm" data-act="edit" title="Edit files and metadata (6)">Edit</button>`);
       if (s.writable && !s.disabled) actions.push(`<button class="btn btn-sm" data-act="rename">Rename</button>`);
       if (!s.disabled) actions.push(`<button class="btn btn-sm" data-act="copy" title="Copy to another agent's drawer (c)">Copy to…</button>`);
+      if (!s.disabled) actions.push(`<button class="btn btn-sm" data-act="sync" title="Overwrite same-named copies in other agents with this version">Sync…</button>`);
       if (s.writable && !s.disabled) actions.push(`<button class="btn btn-sm" data-act="move" title="Move to another agent's drawer (m)">Move to…</button>`);
       if (!s.disabled && (s.kind === "user" || s.kind === "project" || s.kind === "extra")) actions.push(`<button class="btn btn-sm" data-act="archive" title="Shelve outside every agent; unarchive later into any drawer">Archive</button>`);
       actions.push(`<button class="btn btn-sm" data-act="open" title="Open in $EDITOR">Open in editor</button>`);
@@ -533,13 +532,15 @@
         break;
       }
       case "health": {
+        const canFix = s.writable && !state.data.readOnly;
         const lint = s.lintProblems.length
-          ? s.lintProblems.map((p) => `<div class="problem ${p.level}"><div>${esc(p.message)}</div><div class="rule">${esc(p.level)} · ${esc(p.rule)}</div></div>`).join("")
+          ? s.lintProblems.map((p) => `<div class="problem ${p.level}"><div class="row"><span>${esc(p.message)}</span>${p.fix && canFix ? `<span class="spacer"></span><button class="btn btn-sm" data-fix="${esc(p.fix)}">Fix</button>` : ""}</div><div class="rule">${esc(p.level)} · ${esc(p.rule)}</div></div>`).join("")
           : `<p class="muted">Frontmatter and structure look good.</p>`;
         const risk = s.findings.length
           ? s.findings.map((f) => `<div class="problem ${f.severity}"><div>${esc(f.message)}</div><div class="rule">${esc(f.severity)} · ${esc(f.rule)} · ${esc(f.file)}:${f.line}${f.context === "denylist" ? " · in a do-not instruction" : ""}</div><div class="snippet">${esc(f.snippet)}</div></div>`).join("")
           : `<p class="muted">No risky instructions found.</p>`;
         body.innerHTML = `<div class="section-title">Lint</div>${lint}<div class="section-title">Risk audit (heuristic)</div>${risk}`;
+        $$("[data-fix]", body).forEach((b) => (b.onclick = () => applyFix(s.id, b.dataset.fix)));
         break;
       }
       case "ai": {
@@ -711,11 +712,12 @@
           toast(`Opened in ${r.editor}`, { kind: "ok" });
           return;
         }
-        case "export": return exportDialog([s.id]);
+        case "export": return exportSkills([s.id]);
         case "edit": state.tab = "edit"; renderDetail(); return;
         case "copy": return transferDialog([s.id], false);
         case "move": return transferDialog([s.id], true);
         case "archive": return archiveSkills([s.id]);
+        case "sync": return syncDialog(s.id);
         case "assess": state.tab = "ai"; renderDetail(); return runAssessment(s.id, { force: Boolean(state.assessments[s.id]) });
         case "compare-with": return comparePickDialog(s.id);
       }
@@ -872,6 +874,54 @@
           try { await api(`/api/archive/${b.dataset.purge}`, { method: "DELETE" }); close(); await load(true); archiveDialog(); }
           catch (err) { toast(err.message, { kind: "err" }); }
         }));
+      },
+    });
+  }
+
+  async function applyFix(id, fix) {
+    try {
+      const r = await api(`/api/skills/${id}/fix`, { method: "POST", body: { fix } });
+      toast(`Set the frontmatter name to "${r.name}"`, { kind: "ok" });
+      await load(true);
+      if (state.activeId === id) openSkill(id, { keepTab: true });
+    } catch (err) {
+      toast(err.message, { kind: "err" });
+    }
+  }
+
+  async function syncDialog(id) {
+    let data;
+    try {
+      data = await api(`/api/skills/${id}/sync`);
+    } catch (err) {
+      return toast(err.message, { kind: "err" });
+    }
+    if (!data.targets.length) return toast("No other agent has a skill by this name", { timeout: 3000 });
+    const stale = data.targets.filter((t) => !t.inSync);
+    modal({
+      title: `Sync "${data.source.name}" to other agents`,
+      wide: true,
+      body: `<p class="muted">Overwrite the copies below with this version. ${stale.length ? `${stale.length} of ${data.targets.length} ${stale.length === 1 ? "is" : "are"} out of date.` : "They are all already identical."}</p>
+        ${data.targets.map((t) => `<label class="check"><input type="checkbox" data-target="${esc(t.id)}" ${t.inSync ? "" : "checked"} />
+          <span>${esc(t.agentLabel)}</span><span class="muted mono" style="font-size:11.5px">${esc(t.path)}</span>
+          ${t.inSync ? `<span class="badge badge-ok">in sync</span>` : `<span class="badge badge-warn">differs</span>`}</label>`).join("")}`,
+      footer: `<button class="btn" data-cancel>Cancel</button><button class="btn btn-primary" id="sync-go">Sync</button>`,
+      onOpen(el, close) {
+        $("[data-cancel]", el).onclick = close;
+        $("#sync-go", el).onclick = async () => {
+          const ids = $$("[data-target]", el).filter((c) => c.checked).map((c) => c.dataset.target);
+          if (!ids.length) return toast("Nothing selected", { timeout: 2000 });
+          if (!(await confirm({ title: "Overwrite the selected copies?", message: `<p>${ids.length} cop${ids.length === 1 ? "y" : "ies"} will be replaced with this version. They are not put in the trash first.</p>`, ok: "Overwrite", danger: true }))) return;
+          try {
+            const r = await api(`/api/skills/${id}/sync`, { method: "POST", body: { ids } });
+            if (r.errors.length) toast(r.errors.map((e) => `${e.name}: ${e.error}`).join("; "), { kind: "err", timeout: 9000 });
+            if (r.synced.length) toast(`Synced to ${r.synced.map((x) => x.agentLabel).join(", ")}`, { kind: "ok" });
+            close();
+            await load(true);
+          } catch (err) {
+            toast(err.message, { kind: "err" });
+          }
+        };
       },
     });
   }
@@ -1307,16 +1357,19 @@
   }
 
   /* ---------- Dialogs ---------- */
-  function exportDialog(ids) {
-    const scope = ids?.length ? `${ids.length} selected skill${ids.length === 1 ? "" : "s"}` : "all active skills";
-    modal({
-      title: "Export",
-      body: `<p>Export ${esc(scope)} as:</p>
-        <p><b>Manifest</b> — names, drawers, origins and content hashes. Small; reproducible when skills came from GitHub.</p>
-        <p><b>Bundle</b> — manifest plus every file's contents. Restores exactly, anywhere, without network access.</p>`,
-      footer: `<a class="btn" href="/api/export?format=manifest${ids?.length ? `&ids=${ids.join(",")}` : ""}" download>Manifest</a>
-               <a class="btn btn-primary" href="/api/export?format=bundle${ids?.length ? `&ids=${ids.join(",")}` : ""}" download>Bundle</a>`,
-    });
+  /**
+   * Export is always a bundle: the manifest-only form carries no file contents,
+   * so it can only be restored for skills that came from GitHub.
+   */
+  function exportSkills(ids) {
+    const qs = ids?.length ? `&ids=${ids.join(",")}` : "";
+    const a = document.createElement("a");
+    a.href = `/api/export?format=bundle${qs}`;
+    a.download = "skill-drawer-bundle.json";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    toast(`Exporting ${ids?.length ? `${ids.length} skill${ids.length === 1 ? "" : "s"}` : "every active skill"}`, { kind: "ok", timeout: 3000 });
   }
 
   function importDialog() {
@@ -1452,6 +1505,25 @@
     });
   }
 
+  const CAP = 8;
+
+  /** A capped list with a "show all" expander, so a big drawer stays readable. */
+  function capped(items, render, noun) {
+    if (!items.length) return `<p class="muted">None.</p>`;
+    const head = items.slice(0, CAP).map(render).join("");
+    if (items.length <= CAP) return head;
+    const rest = items.slice(CAP).map(render).join("");
+    const id = `more-${Math.random().toString(36).slice(2, 9)}`;
+    return `${head}<div id="${id}" hidden>${rest}</div><button class="btn btn-sm" data-more="${id}" data-count="${items.length - CAP}">Show ${items.length - CAP} more ${esc(noun)}</button>`;
+  }
+
+  function wireExpanders(el) {
+    $$("[data-more]", el).forEach((b) => (b.onclick = () => {
+      $(`#${b.dataset.more}`, el).hidden = false;
+      b.remove();
+    }));
+  }
+
   async function issuesDialog() {
     let data;
     try {
@@ -1460,26 +1532,39 @@
       return toast(err.message, { kind: "err" });
     }
     const link = (s) => `<li><a data-goto="${s.id}">${esc(s.path || s.name)}</a></li>`;
-    const conflicts = data.conflicts.length
-      ? data.conflicts.map((c) => `<div class="issue"><div class="head"><span class="badge badge-${c.severity === "warning" ? "warn" : "info"}">${esc(c.type)}</span>${esc(c.title)}${c.skills.length === 2 && c.type !== "exact-copy" ? `<span class="spacer"></span><button class="btn btn-sm" data-cmp="${esc(c.skills[0].id)}|${esc(c.skills[1].id)}">Compare (AI)</button>` : ""}</div><div class="detail">${esc(c.detail)}</div><ul>${c.skills.map(link).join("")}</ul></div>`).join("")
-      : `<p class="muted">No duplicates or overlapping triggers.</p>`;
-    const lint = data.lint.length
-      ? data.lint.map((l) => `<div class="issue"><div class="head"><span class="badge badge-${l.status === "error" ? "err" : l.status === "warning" ? "warn" : "info"}">${esc(l.status)}</span><a data-goto="${l.id}">${esc(l.name)}</a> <span class="muted">${esc(l.drawer)}</span></div><ul>${l.problems.map((p) => `<li>${esc(p.message)}</li>`).join("")}</ul></div>`).join("")
-      : `<p class="muted">Every skill passes validation.</p>`;
-    const risk = data.risk.length
-      ? data.risk.map((r) => `<div class="issue"><div class="head"><span class="badge badge-${RISK[r.risk] >= 3 ? "err" : "warn"}">${esc(r.risk)}</span><a data-goto="${r.id}">${esc(r.name)}</a> <span class="muted">${esc(r.drawer)}</span></div><ul>${r.findings.slice(0, 5).map((f) => `<li>${esc(f.message)} <span class="muted">${esc(f.file)}:${f.line}</span></li>`).join("")}</ul></div>`).join("")
-      : `<p class="muted">No risky instructions found.</p>`;
-    modal({
-      title: "Issues",
+    const byType = new Map();
+    for (const c of data.conflicts) {
+      if (!byType.has(c.type)) byType.set(c.type, []);
+      byType.get(c.type).push(c);
+    }
+    const TYPE_LABEL = {
+      "exact-copy": "Identical copies",
+      "same-name": "Same name, different content",
+      "similar-name": "Near-identical names",
+      "overlapping-description": "Overlapping triggers",
+    };
+    const conflictSection = [...byType.entries()]
+      .map(([type, list]) => `<div class="section-title">${esc(TYPE_LABEL[type] || type)} (${list.length})</div>${capped(list, (c) => `<div class="issue"><div class="head"><span class="badge badge-${c.severity === "warning" ? "warn" : "info"}">${esc(c.severity)}</span>${esc(c.title)}${c.skills.length === 2 && c.type !== "exact-copy" ? `<span class="spacer"></span><button class="btn btn-sm" data-cmp="${esc(c.skills[0].id)}|${esc(c.skills[1].id)}">Compare (AI)</button>` : ""}</div><div class="detail">${esc(c.detail)}</div><ul>${c.skills.map(link).join("")}</ul></div>`, "pairs")}`)
+      .join("");
+    const lintSection = capped(data.lint, (l) => `<div class="issue"><div class="head"><span class="badge badge-${l.status === "error" ? "err" : l.status === "warning" ? "warn" : "info"}">${esc(l.status)}</span><a data-goto="${l.id}">${esc(l.name)}</a> <span class="muted">${esc(l.drawer)}</span>${l.problems.some((p) => p.fix) ? `<span class="spacer"></span><button class="btn btn-sm" data-fix="${esc(l.id)}">Fix name</button>` : ""}</div><ul>${l.problems.slice(0, 4).map((p) => `<li>${esc(p.message)}</li>`).join("")}</ul></div>`, "skills");
+    const riskSection = capped(data.risk, (r) => `<div class="issue"><div class="head"><span class="badge badge-${RISK[r.risk] >= 3 ? "err" : "warn"}">${esc(r.risk)}</span><a data-goto="${r.id}">${esc(r.name)}</a> <span class="muted">${esc(r.drawer)}</span></div><ul>${r.findings.slice(0, 3).map((f) => `<li>${esc(f.message)} <span class="muted">${esc(f.file)}:${f.line}</span></li>`).join("")}</ul></div>`, "skills");
+    const total = data.conflicts.length + data.lint.length + data.risk.length;
+    const m = modal({
+      title: `Issues (${total})`,
       wide: true,
-      body: `<div class="section-title">Duplicates & conflicts (${data.conflicts.length})</div>${conflicts}
-        <div class="section-title">Lint (${data.lint.length})</div>${lint}
-        <div class="section-title">Risk audit (${data.risk.length})</div>${risk}`,
+      body: `<p class="muted">${data.conflicts.length} duplicate or overlap ${data.conflicts.length === 1 ? "pair" : "pairs"} · ${data.lint.length} with lint problems · ${data.risk.length} with risk findings. Each group shows the first ${CAP}.</p>
+        <div class="section-title">Duplicates &amp; conflicts (${data.conflicts.length})</div>${data.conflicts.length ? conflictSection : `<p class="muted">None.</p>`}
+        <div class="section-title">Lint (${data.lint.length})</div>${lintSection}
+        <div class="section-title">Risk audit (${data.risk.length})</div>${riskSection}`,
       onOpen(el, close) {
+        wireExpanders(el);
         $$("[data-goto]", el).forEach((a) => (a.onclick = () => { close(); openSkill(a.dataset.goto); }));
         $$("[data-cmp]", el).forEach((b) => (b.onclick = () => { const [x, y] = b.dataset.cmp.split("|"); close(); runComparison(x, y); }));
+        $$("[data-fix]", el).forEach((b) => (b.onclick = () => { close(); applyFix(b.dataset.fix, "name"); }));
       },
     });
+    // Expanders inside sections revealed later still need wiring.
+    m.el.addEventListener("click", () => wireExpanders(m.el));
   }
 
   function helpDialog() {
@@ -1540,7 +1625,7 @@
   $("#search").addEventListener("input", (e) => { state.query = e.target.value; applyFilters(); });
   $("#search").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.target.blur(); move(0); } });
   $("#sort").onchange = (e) => { state.sort = e.target.value; applyFilters(); };
-  for (const key of ["lint", "risk", "dupes", "disabled"]) {
+  for (const key of ["attention", "disabled"]) {
     $(`#f-${key}`).onchange = (e) => { state.filters[key] = e.target.checked; applyFilters(); };
   }
   $("#select-all").onchange = (e) => {
@@ -1555,7 +1640,7 @@
   $("#bulk-archive").onclick = () => archiveSkills([...state.marked]);
   $("#btn-ai").onclick = aiSettingsDialog;
   $("#bulk-compare").onclick = () => { const [a, b] = [...state.marked]; runComparison(a, b); };
-  $("#bulk-export").onclick = () => exportDialog([...state.marked]);
+  $("#bulk-export").onclick = () => exportSkills([...state.marked]);
   $("#bulk-clear").onclick = () => { state.marked.clear(); renderList(); };
   $("#btn-new").onclick = newSkillDialog;
   $("#btn-install").onclick = installDialog;
@@ -1571,7 +1656,7 @@
     archived: archiveDialog,
     trashed: trashDialog,
     import: importDialog,
-    export: () => exportDialog(state.marked.size ? [...state.marked] : null),
+    export: () => exportSkills(state.marked.size ? [...state.marked] : null),
   };
   const closeMenus = () => $$(".menu").forEach((m) => {
     m.hidden = true;
@@ -1593,8 +1678,9 @@
   $("#btn-refresh").onclick = () => load(true);
 
   const themeSel = $("#theme");
-  let savedTheme = "carbon";
-  try { savedTheme = localStorage.getItem("skill-drawer-theme") || "carbon"; } catch { /* ignore */ }
+  let savedTheme = "auto";
+  try { savedTheme = localStorage.getItem("skill-drawer-theme") || "auto"; } catch { /* ignore */ }
+  if (!["auto", "dark", "light"].includes(savedTheme)) savedTheme = savedTheme === "paper" ? "light" : "dark";
   document.documentElement.dataset.theme = savedTheme;
   themeSel.value = savedTheme;
   themeSel.onchange = () => {
@@ -1604,7 +1690,25 @@
 
   window.addEventListener("beforeunload", (e) => { if (state.editorDirty) { e.preventDefault(); e.returnValue = ""; } });
 
+  /* Live reload: the server watches the drawers and tells us when they change. */
+  function listenForChanges() {
+    if (!window.EventSource) return;
+    let source;
+    try {
+      source = new EventSource("/api/events");
+    } catch {
+      return;
+    }
+    source.addEventListener("changed", () => {
+      // Never yank the ground out from under an unsaved edit.
+      if (state.editorDirty) return;
+      load(true);
+    });
+    source.onerror = () => { /* EventSource reconnects on its own */ };
+  }
+
   load().then(() => {
+    listenForChanges();
     // Hide mutating controls in read-only mode.
     if (state.data?.readOnly) {
       for (const id of ["btn-new", "btn-install", "bulk-delete", "bulk-disable", "bulk-copy", "bulk-move", "bulk-archive"]) $(`#${id}`).hidden = true;

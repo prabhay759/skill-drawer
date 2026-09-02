@@ -17,7 +17,9 @@ Usage
   skill-drawer list [--json]             list skills across all drawers
   skill-drawer lint [--json]             validate frontmatter and structure
   skill-drawer issues [--json]           duplicates, conflicts, lint, risk
-  skill-drawer export [--bundle] [file]  write a manifest (or bundle with file contents)
+  skill-drawer export [file] [--manifest]
+                                         full bundle by default; --manifest is the
+                                         small form (needs GitHub origins to restore)
   skill-drawer import <file> [--drawer <path>] [--overwrite] [--fetch]
   skill-drawer install <src> [--drawer <path>] [--overwrite]
                                          src: owner/repo, owner/repo/path, GitHub URL, local folder
@@ -28,6 +30,8 @@ Usage
   skill-drawer archive list              what is on the shelf
   skill-drawer copy <name|path> --drawer <path> [--overwrite]
   skill-drawer move <name|path> --drawer <path> [--overwrite]
+  skill-drawer sync <name|path> [--dry-run]
+                                         overwrite same-named copies in other agents
   skill-drawer agents                    installed agents and their skills
   skill-drawer quality [--json]          static quality score for every skill
   skill-drawer overlap [--threshold 0.35] [--json]
@@ -73,11 +77,13 @@ function parseArgs(argv) {
     else if (a === "--cwd") flags.cwd = path.resolve(next());
     else if (a === "--json") flags.json = true;
     else if (a === "--bundle") flags.bundle = true;
+    else if (a === "--manifest") flags.manifest = true;
     else if (a === "--drawer") flags.drawer = path.resolve(next().replace(/^~(?=$|\/)/, process.env.HOME || ""));
     else if (a === "--overwrite") flags.overwrite = true;
     else if (a === "--fetch") flags.fetch = true;
     else if (a === "--force") flags.force = true;
     else if (a === "--threshold") flags.threshold = Number(next());
+    else if (a === "--dry-run") flags.dryRun = true;
     else if (a === "--quiet" || a === "-q") flags.quiet = true;
     else if (a === "-h" || a === "--help") flags.help = true;
     else if (a === "-v" || a === "--version") flags.version = true;
@@ -238,6 +244,24 @@ export async function runCli(argv) {
       console.log(`unarchived ${r.name} -> ${r.restoredTo}`);
       return;
     }
+    case "sync": {
+      if (!rest[0]) throw new Error("sync needs a skill name or path");
+      const index = scanSkills(scanOpts(flags));
+      const source = findByNameOrPath(index, rest[0]);
+      if (!source) throw new Error(`No skill named ${rest[0]}`);
+      const key = (n) => String(n || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+      const targets = index.skills.filter((s) => s.id !== source.id && !s.disabled && s.writable && key(s.name) === key(source.name));
+      if (!targets.length) throw new Error(`No other agent has a skill named ${source.name}`);
+      for (const t of targets) {
+        const same = t.contentHash === source.contentHash;
+        if (flags.dryRun) { console.log(`${same ? "in sync  " : "would sync"} ${t.agentLabel.padEnd(20)} ${t.path}`); continue; }
+        if (same) { console.log(`in sync   ${t.agentLabel.padEnd(20)} ${t.path}`); continue; }
+        const drawer = index.drawers.find((d) => d.id === t.drawerId);
+        copySkill(source, drawer, { overwrite: true, newName: path.basename(t.path) });
+        console.log(`synced    ${t.agentLabel.padEnd(20)} ${t.path}`);
+      }
+      return;
+    }
     case "copy":
     case "move": {
       if (!rest[0]) throw new Error(`${cmd} needs a skill name or path`);
@@ -362,7 +386,7 @@ export async function runCli(argv) {
     }
     case "export": {
       const index = scanSkills(scanOpts(flags));
-      const data = exportManifest(index.skills.filter((s) => !s.disabled), { includeFiles: flags.bundle });
+      const data = exportManifest(index.skills.filter((s) => !s.disabled), { includeFiles: !flags.manifest });
       const text = JSON.stringify(data, null, 2) + "\n";
       if (rest[0]) {
         fs.writeFileSync(rest[0], text);

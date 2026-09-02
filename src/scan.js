@@ -81,9 +81,7 @@ export function discoverDrawers({ cwd = process.cwd(), extraRoots = [], project 
     const base = path.join(home, entry.name);
     const id = entry.name.slice(1);
     const agent = agentForFolder(entry.name, known);
-    for (const folder of ["skills", "skill"]) {
-      add(id, `~/${entry.name}/${folder}`, path.join(base, folder), "user", "user", false, true, agent);
-    }
+    add(id, `~/${entry.name}/skills`, path.join(base, "skills"), "user", "user", false, true, agent);
     if (entry.name === ".cursor") {
       add("cursor-builtin", "~/.cursor/skills-cursor", path.join(base, "skills-cursor"), "builtin", "user", false, false, agent);
       add("cursor-plugins", "~/.cursor/plugins", path.join(base, "plugins"), "plugin", "user", true, false, agent);
@@ -186,7 +184,7 @@ function walkSkillContainers(dir, drawer, list, depth = 0) {
     return;
   }
   const base = path.basename(dir);
-  if (base === "skills" || base === "skill") {
+  if (base === "skills") {
     collectDirectSkills(drawer, list, dir);
     return;
   }

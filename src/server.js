@@ -18,6 +18,7 @@ import {
 } from "./scan.js";
 import { overlapPairs } from "./overlap.js";
 import { loadAgentSettings, saveAgentSettings } from "./settings.js";
+import { createWatcher } from "./watch.js";
 import { diffLines } from "./diff.js";
 import { listStore, stash, restore, purge, purgeAll, storeRoot } from "./store.js";
 import { exportManifest, importManifest, parseManifest } from "./manifest.js";
@@ -56,14 +57,33 @@ export function createApp(options = {}) {
     ...options,
   };
   let cache = { at: 0, payload: null };
+  const clients = new Set();
+  const watcher = createWatcher({
+    onChange: () => {
+      cache = { at: 0, payload: null };
+      broadcast("changed");
+    },
+  });
+  function broadcast(event) {
+    for (const res of clients) {
+      try {
+        res.write(`event: ${event}\ndata: {"at":${Date.now()}}\n\n`);
+      } catch {
+        clients.delete(res);
+      }
+    }
+  }
   const scanOptions = { cwd: opts.cwd, extraRoots: opts.extraRoots, project: opts.project, ...(opts.home ? { home: opts.home } : {}) };
   const getIndex = (force = false) => {
     if (!force && cache.payload) return cache.payload;
     cache = { at: Date.now(), payload: scanSkills(scanOptions) };
+    if (opts.watch !== false) watcher.watch(cache.payload.drawers.map((d) => d.root));
     return cache.payload;
   };
   const invalidate = () => {
     cache = { at: 0, payload: null };
+    // Our own writes must not bounce straight back as a change notification.
+    watcher.mute();
   };
   const findSkill = (id, refresh = false) => {
     const index = getIndex(refresh);
@@ -471,6 +491,72 @@ export function createApp(options = {}) {
     return { ok: true };
   }));
 
+  app.get("/api/events", (req, res) => {
+    res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive", "X-Accel-Buffering": "no" });
+    res.write(`event: hello\ndata: {"watching":${watcher.count}}\n\n`);
+    clients.add(res);
+    const ping = setInterval(() => {
+      try {
+        res.write(": ping\n\n");
+      } catch {
+        /* closed */
+      }
+    }, 25000);
+    req.on("close", () => {
+      clearInterval(ping);
+      clients.delete(res);
+    });
+  });
+
+  /** Same-named skills in other writable drawers: the copies sync targets. */
+  const syncTargets = (index, skill) => {
+    const key = (n) => String(n || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+    return index.skills
+      .filter((s) => s.id !== skill.id && !s.disabled && s.writable && key(s.name) === key(skill.name))
+      .map((s) => ({ id: s.id, name: s.name, path: s.path, agentLabel: s.agentLabel, drawerId: s.drawerId, drawerLabel: s.drawerLabel, inSync: s.contentHash === skill.contentHash }));
+  };
+
+  app.get("/api/skills/:id/sync", wrap((req) => {
+    const { index, skill } = findSkill(req.params.id);
+    return { source: toCatalogSkill(skill), targets: syncTargets(index, skill) };
+  }));
+
+  app.post("/api/skills/:id/sync", wrap((req) => {
+    const { index, skill } = findSkill(req.params.id, true);
+    if (skill.disabled) throw httpError(400, "Enable the skill before syncing it");
+    const wanted = Array.isArray(req.body?.ids) ? req.body.ids.map(String) : null;
+    const targets = syncTargets(index, skill).filter((t) => !wanted || wanted.includes(t.id));
+    if (!targets.length) throw httpError(400, "No matching copies to sync");
+    const synced = [];
+    const errors = [];
+    for (const t of targets) {
+      try {
+        const drawer = index.drawers.find((d) => d.id === t.drawerId);
+        if (!drawer) throw new Error("Its drawer is no longer available");
+        const target = index.byId.get(t.id);
+        assertMutable(target, index.drawers);
+        copySkill(skill, drawer, { overwrite: true, newName: path.basename(target.path) });
+        synced.push({ id: t.id, name: t.name, path: t.path, agentLabel: t.agentLabel });
+      } catch (err) {
+        errors.push({ id: t.id, name: t.name, error: err.message });
+      }
+    }
+    invalidate();
+    return { synced, errors, from: toCatalogSkill(skill) };
+  }));
+
+  app.post("/api/skills/:id/fix", wrap((req) => {
+    const rule = String(req.body?.fix || "");
+    const { skill } = findSkill(req.params.id, true);
+    if (!skill.writable) throw httpError(403, "This skill is read-only");
+    if (rule !== "name") throw httpError(400, `No automatic fix for "${rule}"`);
+    if (skill.file) throw httpError(400, "Single-file skills have no folder name to match");
+    const text = fs.readFileSync(skill.skillFile, "utf8");
+    fs.writeFileSync(skill.skillFile, setFrontmatterName(text, skill.slug), "utf8");
+    invalidate();
+    return { fixed: rule, name: skill.slug };
+  }));
+
   app.get("/api/trash", wrap(() => ({ root: storeRoot("trash"), entries: listStore("trash") })));
   app.post("/api/trash/:entry/restore", wrap((req) => {
     const out = restore("trash", req.params.entry, { target: req.body?.target });
@@ -587,6 +673,17 @@ export function createApp(options = {}) {
   app.use("/vendor/marked", express.static(pkgRoot("marked")));
   app.use("/vendor/dompurify", express.static(pkgRoot("dompurify")));
   const web = path.join(ROOT, "web");
+  app.locals.closeWatcher = () => {
+    watcher.close();
+    for (const res of clients) {
+      try {
+        res.end();
+      } catch {
+        /* already gone */
+      }
+    }
+    clients.clear();
+  };
   app.use(express.static(web));
   app.use((req, res) => {
     if (req.path.startsWith("/api")) {
@@ -618,6 +715,7 @@ export function startServer(options = {}) {
   return new Promise((resolve, reject) => {
     const attempt = (p, left) => {
       const server = app.listen(p, host);
+      server.on("close", () => app.locals.closeWatcher?.());
       server.on("listening", () => {
         const url = `http://${host}:${server.address().port}`;
         if (!options.quiet) {
