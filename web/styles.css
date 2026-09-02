@@ -227,3 +227,20 @@ pre { background: var(--bg-3); padding: 10px 12px; border-radius: var(--radius);
 .agent-chip { display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 3px; background: var(--bg-3); color: var(--fg-2); }
 .meta-form .field { margin-bottom: 10px; }
 .meta-form textarea { min-height: 70px; }
+
+.score { display: inline-flex; align-items: baseline; gap: 6px; font-size: 28px; font-weight: 700; }
+.score small { font-size: 13px; color: var(--fg-3); font-weight: 400; }
+.grade { display: inline-block; font-weight: 700; padding: 2px 10px; border-radius: 4px; border: 1px solid var(--line); }
+.grade-A { color: var(--ok); border-color: var(--ok); } .grade-B { color: var(--ok); } .grade-C { color: var(--warn); border-color: var(--warn); } .grade-D, .grade-F { color: var(--err); border-color: var(--err); }
+.dims { display: grid; grid-template-columns: max-content 60px 1fr; gap: 6px 12px; align-items: center; font-size: 13px; }
+.dims .bar { height: 8px; background: var(--bg-3); border-radius: 4px; overflow: hidden; }
+.dims .bar i { display: block; height: 100%; background: var(--accent); }
+.dims .note { grid-column: 1 / -1; color: var(--fg-2); font-size: 12.5px; margin: -2px 0 6px; }
+.ai-meta { color: var(--fg-3); font-size: 12px; margin-top: 12px; }
+.cmp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.cmp-col { border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; }
+.cmp-col h3 { margin: 0 0 6px; font-size: 14px; }
+.rec { padding: 10px 12px; border-left: 3px solid var(--accent); background: var(--bg-3); margin: 12px 0; }
+.spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; vertical-align: middle; margin-right: 6px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.notice { padding: 10px 12px; border: 1px dashed var(--line); border-radius: var(--radius); color: var(--fg-2); }

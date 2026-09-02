@@ -6,6 +6,8 @@ import { installSkills } from "./install.js";
 import { listStore, restore, purge, purgeAll, stash } from "./store.js";
 import { startServer } from "./server.js";
 import { drawerHome } from "./util.js";
+import { publicConfig, saveConfig, testConnection, assessSkill, compareSkills, clearCache, PRESETS } from "./ai.js";
+import { readSkill } from "./scan.js";
 
 const HELP = `skill-drawer — browse, lint and organise agent skills across every drawer
 
@@ -27,6 +29,13 @@ Usage
   skill-drawer move <name|path> --drawer <path> [--overwrite]
   skill-drawer agents                    skills grouped by agent
   skill-drawer trash [list|restore <entry>|empty|purge <entry>]
+  skill-drawer ai [show|set <key>=<value>…|test|presets|clear-cache]
+                                         configure the model used for assess/compare
+                                         keys: provider (openai|anthropic), baseUrl, model, apiKey, temperature, maxTokens
+  skill-drawer assess <name|path> [--json] [--force]
+                                         AI quality assessment of one skill
+  skill-drawer compare <a> <b> [--json] [--force]
+                                         AI comparison of two skills
   skill-drawer drawers                   show the drawers that were found
 
 Options
@@ -63,6 +72,7 @@ function parseArgs(argv) {
     else if (a === "--drawer") flags.drawer = path.resolve(next().replace(/^~(?=$|\/)/, process.env.HOME || ""));
     else if (a === "--overwrite") flags.overwrite = true;
     else if (a === "--fetch") flags.fetch = true;
+    else if (a === "--force") flags.force = true;
     else if (a === "--quiet" || a === "-q") flags.quiet = true;
     else if (a === "-h" || a === "--help") flags.help = true;
     else if (a === "-v" || a === "--version") flags.version = true;
@@ -204,6 +214,86 @@ export async function runCli(argv) {
       const drawer = index.drawers.find((d) => d.root === flags.drawer) || { root: flags.drawer, label: flags.drawer, writable: true };
       const r = copySkill(s, drawer, { move: cmd === "move", overwrite: flags.overwrite });
       console.log(`${cmd === "move" ? "moved" : "copied"} ${s.name} -> ${r.to}`);
+      return;
+    }
+    case "ai": {
+      const sub = rest[0] || "show";
+      if (sub === "show") {
+        const c = publicConfig();
+        if (flags.json) return out(c);
+        console.log(table([["provider", c.provider], ["baseUrl", c.baseUrl], ["model", c.model || "(not set)"], ["apiKey", c.hasKey ? c.keyHint : "(none)"], ["temperature", c.temperature], ["maxTokens", c.maxTokens], ["ready", c.ready ? "yes" : "no"]], ["setting", "value"]));
+        return;
+      }
+      if (sub === "presets") {
+        console.log(table(PRESETS.map((p) => [p.id, p.provider, p.baseUrl || "(you choose)", p.model || "(you choose)", p.keyEnv || ""]), ["preset", "provider", "baseUrl", "model", "key env"]));
+        return;
+      }
+      if (sub === "set") {
+        const patch = {};
+        for (const kv of rest.slice(1)) {
+          const i = kv.indexOf("=");
+          if (i < 1) throw new Error(`Expected key=value, got ${kv}`);
+          const k = kv.slice(0, i);
+          const v = kv.slice(i + 1);
+          if (k === "preset") {
+            const p = PRESETS.find((x) => x.id === v);
+            if (!p) throw new Error(`Unknown preset ${v}`);
+            Object.assign(patch, { provider: p.provider, baseUrl: p.baseUrl, model: p.model });
+          } else if (k === "temperature" || k === "maxTokens" || k === "timeoutMs") patch[k] = Number(v);
+          else patch[k] = v;
+        }
+        const c = saveConfig(patch);
+        console.log(`saved: provider=${c.provider} baseUrl=${c.baseUrl} model=${c.model || "(not set)"} apiKey=${c.hasKey ? c.keyHint : "(none)"}`);
+        return;
+      }
+      if (sub === "test") {
+        const r = await testConnection();
+        console.log(`ok: ${r.model} via ${r.provider} answered "${r.reply}" in ${r.ms} ms`);
+        return;
+      }
+      if (sub === "clear-cache") {
+        clearCache();
+        console.log("cleared");
+        return;
+      }
+      throw new Error(`Unknown ai command ${sub}`);
+    }
+    case "assess": {
+      if (!rest[0]) throw new Error("assess needs a skill name or path");
+      const index = scanSkills(scanOpts(flags));
+      const s = findByNameOrPath(index, rest[0]);
+      if (!s) throw new Error(`No skill named ${rest[0]}`);
+      const r = await assessSkill(readSkill(s), { force: flags.force });
+      if (flags.json) return out(r);
+      const a = r.result;
+      console.log(`${s.name}: ${a.score}/100 (${a.grade})${r.cached ? "  [cached]" : ""}  model ${r.model}`);
+      console.log(`\n${a.summary}\n`);
+      for (const [k, d] of Object.entries(a.dimensions || {})) console.log(`  ${k.padEnd(13)} ${String(d.score).padStart(2)}/10  ${d.note}`);
+      const list = (title, items) => { if (items?.length) { console.log(`\n${title}`); for (const i of items) console.log(`  - ${i}`); } };
+      list("Strengths", a.strengths);
+      list("Weaknesses", a.weaknesses);
+      list("Suggestions", a.suggestions);
+      if (a.improvedDescription) console.log(`\nSuggested description:\n  ${a.improvedDescription}`);
+      return;
+    }
+    case "compare": {
+      if (!rest[0] || !rest[1]) throw new Error("compare needs two skill names or paths");
+      const index = scanSkills(scanOpts(flags));
+      const a = findByNameOrPath(index, rest[0]);
+      const b = findByNameOrPath(index, rest[1]);
+      if (!a) throw new Error(`No skill named ${rest[0]}`);
+      if (!b) throw new Error(`No skill named ${rest[1]}`);
+      const r = await compareSkills(readSkill(a), readSkill(b), { force: flags.force });
+      if (flags.json) return out(r);
+      const c = r.result;
+      console.log(`A: ${a.name} (${a.drawerLabel})  B: ${b.name} (${b.drawerLabel})${r.cached ? "  [cached]" : ""}  model ${r.model}`);
+      console.log(`\n${c.summary}\n\noverlap ${c.overlap}%  same job: ${c.sameJob ? "yes" : "no"}  quality A ${c.scoreA}  B ${c.scoreB}\nrecommendation: ${c.recommendation} — ${c.rationale}`);
+      const list = (title, items) => { if (items?.length) { console.log(`\n${title}`); for (const i of items) console.log(`  - ${i}`); } };
+      list("Differences", c.differences);
+      list("A does better", c.strengthsA);
+      list("B does better", c.strengthsB);
+      list("Merge plan", c.mergePlan);
+      if (c.triggerFix) console.log(`\nTrigger fix:\n  ${c.triggerFix}`);
       return;
     }
     case "drawers": {

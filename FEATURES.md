@@ -46,6 +46,12 @@ Skill Drawer started from a review of [skill-cabinet](https://github.com/subsy/s
 | **Transport / copy skills across agents** | `copySkill` in `src/scan.js` copies or moves a folder, file or symlink (dereferenced) into another drawer, skipping `node_modules` and `.git`, with overwrite and rename. Copy to… / Move to… on a skill or a selection; drawer picker grouped by agent; keys `c` and `m`; CLI `copy` and `move`. |
 | **Edit skills** | Edit button in the toolbar. The Edit tab gained a metadata form (description and other frontmatter keys) backed by `PUT /api/skills/:id/frontmatter`, which rewrites the frontmatter block and leaves the body byte-for-byte; plus New file and Delete file (`DELETE /api/skills/:id/file`) next to the file editor. |
 
+## Added in 0.3.0
+
+| Request | What was built |
+|---|---|
+| **Compare two skills and assess quality with a chat-completions API the user configures** | `src/ai.js`: a raw-HTTP client with two wire formats, OpenAI chat completions (`POST {baseUrl}/chat/completions`, Bearer key, `response_format: json_object` with automatic fallback) and Anthropic Messages (`POST {baseUrl}/v1/messages`, `x-api-key`). Settings in `~/.skill-drawer/ai.json` with env overrides and presets. Two prompts with strict JSON schemas: assessment (score, grade, five dimensions, strengths, weaknesses, suggestions, improved description) and comparison (overlap, same job, per-skill quality, keep/merge recommendation, merge plan, trigger fix). Results cached by model and content hash. UI: AI ⚙ settings with Test, Assess (AI) button and AI tab with Apply-description, Compare with… picker, Compare (AI) for two marked skills, Compare on two-skill conflicts in Issues. CLI: `ai`, `assess`, `compare`. |
+
 ## Out of scope, on purpose
 
 - **Multi-user or remote access.** The server binds to 127.0.0.1 and has no auth; putting it on a network would need both.

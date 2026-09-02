@@ -34,6 +34,8 @@
     detail: null,
     tab: "rendered",
     editorDirty: false,
+    ai: null,
+    assessments: {},
   };
 
   /* ---------- API ---------- */
@@ -139,6 +141,7 @@
       const data = await api(`/api/skills${refresh ? "?refresh=1" : ""}`);
       state.data = data;
       state.skills = data.skills;
+      if (!state.ai) api("/api/ai/config").then((c) => { state.ai = c; }).catch(() => {});
       $("#readonly-badge").hidden = !data.readOnly;
       document.body.classList.toggle("read-only", data.readOnly);
       for (const id of Array.from(state.marked)) if (!data.skills.some((s) => s.id === id)) state.marked.delete(id);
@@ -299,6 +302,7 @@
     const n = state.marked.size;
     $("#bulk").hidden = !n;
     $("#bulk-count").textContent = `${n} marked`;
+    $("#bulk-compare").hidden = n !== 2;
   }
 
   /* ---------- Detail ---------- */
@@ -339,6 +343,7 @@
       ["files", `Files (${s.files.length})`],
       ["health", `Health${s.lintProblems.length + s.findings.length ? ` (${s.lintProblems.length + s.findings.length})` : ""}`],
       ["edit", "Edit"],
+      ["ai", state.assessments[s.id] ? `AI ${state.assessments[s.id].result?.score ?? ""}` : "AI"],
     ];
     const actions = [];
     if (!ro) {
@@ -350,6 +355,8 @@
       if (s.writable && !s.disabled) actions.push(`<button class="btn btn-sm" data-act="move" title="Move to another agent's drawer (m)">Move to…</button>`);
       if (!s.disabled && (s.kind === "user" || s.kind === "project" || s.kind === "extra")) actions.push(`<button class="btn btn-sm" data-act="archive" title="Shelve outside every agent; unarchive later into any drawer">Archive</button>`);
       actions.push(`<button class="btn btn-sm" data-act="open" title="Open in $EDITOR">Open in editor</button>`);
+      actions.push(`<button class="btn btn-sm" data-act="assess" title="AI quality assessment">Assess (AI)</button>`);
+      actions.push(`<button class="btn btn-sm" data-act="compare-with" title="AI-compare with another skill">Compare with…</button>`);
       actions.push(`<button class="btn btn-sm" data-act="export">Export</button>`);
       if (s.disabled) actions.push(`<button class="btn btn-sm btn-danger" data-act="delete-permanent">Delete permanently</button>`);
       else {
@@ -357,6 +364,8 @@
         actions.push(`<button class="btn btn-sm" data-act="delete-permanent" title="Skip the trash">Delete permanently</button>`);
       }
     } else {
+      actions.push(`<button class="btn btn-sm" data-act="assess" title="AI quality assessment">Assess (AI)</button>`);
+      actions.push(`<button class="btn btn-sm" data-act="compare-with" title="AI-compare with another skill">Compare with…</button>`);
       actions.push(`<button class="btn btn-sm" data-act="export">Export</button>`);
     }
     pane.innerHTML = `
@@ -425,6 +434,10 @@
           ? s.findings.map((f) => `<div class="problem ${f.severity}"><div>${esc(f.message)}</div><div class="rule">${esc(f.severity)} · ${esc(f.rule)} · ${esc(f.file)}:${f.line}${f.context === "denylist" ? " · in a do-not instruction" : ""}</div><div class="snippet">${esc(f.snippet)}</div></div>`).join("")
           : `<p class="muted">No risky instructions found.</p>`;
         body.innerHTML = `<div class="section-title">Lint</div>${lint}<div class="section-title">Risk audit (heuristic)</div>${risk}`;
+        break;
+      }
+      case "ai": {
+        renderAssessment(body, s);
         break;
       }
       case "edit": {
@@ -597,6 +610,8 @@
         case "copy": return transferDialog([s.id], false);
         case "move": return transferDialog([s.id], true);
         case "archive": return archiveSkills([s.id]);
+        case "assess": state.tab = "ai"; renderDetail(); return runAssessment(s.id, { force: Boolean(state.assessments[s.id]) });
+        case "compare-with": return comparePickDialog(s.id);
       }
     } catch (err) {
       toast(err.message, { kind: "err" });
@@ -751,6 +766,193 @@
           try { await api(`/api/archive/${b.dataset.purge}`, { method: "DELETE" }); close(); await load(true); archiveDialog(); }
           catch (err) { toast(err.message, { kind: "err" }); }
         }));
+      },
+    });
+  }
+
+  /* ---------- AI: settings, assessment, comparison ---------- */
+  function aiNotReady() {
+    return !state.ai || !state.ai.ready;
+  }
+
+  function renderAssessment(body, s) {
+    const a = state.assessments[s.id];
+    if (a === "loading") {
+      body.innerHTML = `<p><span class="spinner"></span>Asking ${esc(state.ai?.model || "the model")}… this usually takes 10–60 seconds.</p>`;
+      return;
+    }
+    if (!a) {
+      body.innerHTML = aiNotReady()
+        ? `<div class="notice">Set up a model first: click <b>AI ⚙</b> in the top bar and enter an endpoint, model and API key. Any OpenAI-compatible chat-completions server works (OpenAI, OpenRouter, Groq, Ollama, LM Studio…) as well as Anthropic's API.</div>`
+        : `<div class="notice">No assessment yet. <button class="btn btn-sm btn-primary" id="ai-run">Assess with ${esc(state.ai.model)}</button><p class="muted" style="margin:8px 0 0">The full SKILL.md, frontmatter, file list and static findings are sent to the model you configured. Results are cached until the skill changes.</p></div>`;
+      $("#ai-run", body)?.addEventListener("click", () => runAssessment(s.id));
+      return;
+    }
+    const r = a.result || {};
+    const dims = Object.entries(r.dimensions || {});
+    const list = (title, items) => (items?.length ? `<div class="section-title">${esc(title)}</div><ul>${items.map((i) => `<li>${esc(i)}</li>`).join("")}</ul>` : "");
+    body.innerHTML = `
+      <div class="row" style="gap:14px"><span class="score">${esc(r.score ?? "?")}<small>/ 100</small></span><span class="grade grade-${esc(r.grade || "")}">${esc(r.grade || "")}</span><span class="spacer"></span><button class="btn btn-sm" id="ai-rerun" title="Ignore the cache and ask again">Re-assess</button><button class="btn btn-sm" id="ai-compare">Compare with…</button></div>
+      <p>${esc(r.summary || "")}</p>
+      <div class="section-title">Dimensions</div>
+      <div class="dims">${dims.map(([k, d]) => `<span>${esc(k)}</span><span class="bar"><i style="width:${Math.max(0, Math.min(10, Number(d.score) || 0)) * 10}%"></i></span><span>${esc(d.score)}/10</span><span class="note">${esc(d.note || "")}</span>`).join("")}</div>
+      ${list("Strengths", r.strengths)}${list("Weaknesses", r.weaknesses)}${list("Suggestions", r.suggestions)}
+      ${r.improvedDescription ? `<div class="section-title">Suggested description</div><div class="notice"><div>${esc(r.improvedDescription)}</div>${s.writable && !state.data.readOnly ? `<div style="margin-top:8px"><button class="btn btn-sm btn-primary" id="ai-apply-desc">Apply to frontmatter</button></div>` : ""}</div>` : ""}
+      <div class="ai-meta">${esc(a.model)} via ${esc(a.provider)} · ${a.cached ? "cached" : `${Math.round((a.ms || 0) / 1000)}s`}${a.usage?.total_tokens ? ` · ${a.usage.total_tokens} tokens` : a.usage?.input_tokens ? ` · ${a.usage.input_tokens + (a.usage.output_tokens || 0)} tokens` : ""}${a.truncated ? " · body was truncated for the model" : ""} · ${fmtDate(a.at)}</div>`;
+    $("#ai-rerun", body).onclick = () => runAssessment(s.id, { force: true });
+    $("#ai-compare", body).onclick = () => comparePickDialog(s.id);
+    $("#ai-apply-desc", body)?.addEventListener("click", async () => {
+      try {
+        const data = { ...(s.frontmatter || {}), name: s.frontmatter?.name ?? s.slug, description: r.improvedDescription };
+        await api(`/api/skills/${s.id}/frontmatter`, { method: "PUT", body: { data } });
+        toast("Description updated", { kind: "ok" });
+        await load(true);
+        openSkill(s.id, { keepTab: true });
+      } catch (err) {
+        toast(err.message, { kind: "err" });
+      }
+    });
+  }
+
+  async function runAssessment(id, { force = false } = {}) {
+    if (aiNotReady()) return aiSettingsDialog();
+    state.assessments[id] = "loading";
+    if (state.detail?.id === id && state.tab === "ai") renderTab();
+    try {
+      state.assessments[id] = await api("/api/ai/assess", { method: "POST", body: { id, force } });
+    } catch (err) {
+      delete state.assessments[id];
+      toast(err.message, { kind: "err", timeout: 10000 });
+    }
+    if (state.detail?.id === id) renderDetail();
+  }
+
+  function comparePickDialog(aId) {
+    if (aiNotReady()) return aiSettingsDialog();
+    const a = state.skills.find((s) => s.id === aId);
+    const others = state.skills.filter((s) => s.id !== aId);
+    modal({
+      title: `Compare "${a?.name}" with…`,
+      body: `<div class="field"><label>Filter</label><input id="cmp-filter" placeholder="type to filter" /></div>
+        <div class="field"><label>Skill B</label><select id="cmp-b" size="10" style="width:100%">${others.map((s) => `<option value="${s.id}">${esc(s.name)} — ${esc(s.agentLabel)} · ${esc(s.drawerLabel)}</option>`).join("")}</select></div>`,
+      footer: `<button class="btn btn-primary" id="cmp-go">Compare</button>`,
+      onOpen(el, close) {
+        const sel = $("#cmp-b", el);
+        const f = $("#cmp-filter", el);
+        f.focus();
+        f.addEventListener("input", () => {
+          const q = f.value.toLowerCase();
+          for (const o of sel.options) o.hidden = q && !o.text.toLowerCase().includes(q);
+        });
+        const go = () => { if (!sel.value) return; close(); runComparison(aId, sel.value); };
+        $("#cmp-go", el).onclick = go;
+        sel.addEventListener("dblclick", go);
+      },
+    });
+  }
+
+  async function runComparison(aId, bId, { force = false } = {}) {
+    if (aiNotReady()) return aiSettingsDialog();
+    const m = modal({ title: "Comparing…", wide: true, body: `<p><span class="spinner"></span>Asking ${esc(state.ai.model)} to compare both skills. This usually takes 15–90 seconds.</p>` });
+    let r;
+    try {
+      r = await api("/api/ai/compare", { method: "POST", body: { a: aId, b: bId, force } });
+    } catch (err) {
+      m.close();
+      return toast(err.message, { kind: "err", timeout: 10000 });
+    }
+    m.close();
+    const c = r.result || {};
+    const ul = (items) => (items?.length ? `<ul>${items.map((i) => `<li>${esc(i)}</li>`).join("")}</ul>` : `<p class="muted">—</p>`);
+    const recLabel = { "keep-a": `Keep A (${r.a.name}) and drop B`, "keep-b": `Keep B (${r.b.name}) and drop A`, "keep-both": "Keep both", merge: "Merge them into one" }[c.recommendation] || c.recommendation;
+    modal({
+      title: `AI comparison: ${r.a.name} vs ${r.b.name}`,
+      wide: true,
+      body: `<p>${esc(c.summary || "")}</p>
+        <div class="row" style="gap:16px"><span>Overlap <b>${esc(c.overlap)}%</b></span><span>Same job: <b>${c.sameJob ? "yes" : "no"}</b></span><span>Quality A <b>${esc(c.scoreA)}</b> · B <b>${esc(c.scoreB)}</b></span></div>
+        <div class="rec"><b>${esc(recLabel)}</b><div>${esc(c.rationale || "")}</div></div>
+        <div class="cmp-grid">
+          <div class="cmp-col"><h3>A · ${esc(r.a.name)} <span class="agent-chip">${esc(r.a.agentLabel)}</span></h3><div class="muted mono" style="font-size:11px">${esc(r.a.path)}</div><div class="section-title">Does better</div>${ul(c.strengthsA)}</div>
+          <div class="cmp-col"><h3>B · ${esc(r.b.name)} <span class="agent-chip">${esc(r.b.agentLabel)}</span></h3><div class="muted mono" style="font-size:11px">${esc(r.b.path)}</div><div class="section-title">Does better</div>${ul(c.strengthsB)}</div>
+        </div>
+        <div class="section-title">Differences</div>${ul(c.differences)}
+        ${c.mergePlan?.length ? `<div class="section-title">Merge plan</div>${ul(c.mergePlan)}` : ""}
+        ${c.triggerFix ? `<div class="section-title">Trigger fix</div><div class="notice">${esc(c.triggerFix)}</div>` : ""}
+        <div class="ai-meta">${esc(r.model)} via ${esc(r.provider)} · ${r.cached ? "cached" : `${Math.round((r.ms || 0) / 1000)}s`}${r.truncated ? " · a body was truncated for the model" : ""}</div>`,
+      footer: `<button class="btn" id="cmp-open-a">Open A</button><button class="btn" id="cmp-open-b">Open B</button><button class="btn" id="cmp-again">Re-compare</button>`,
+      onOpen(el, close) {
+        $("#cmp-open-a", el).onclick = () => { close(); openSkill(r.a.id); };
+        $("#cmp-open-b", el).onclick = () => { close(); openSkill(r.b.id); };
+        $("#cmp-again", el).onclick = () => { close(); runComparison(aId, bId, { force: true }); };
+      },
+    });
+  }
+
+  async function aiSettingsDialog() {
+    let cfg;
+    try {
+      cfg = await api("/api/ai/config");
+      state.ai = cfg;
+    } catch (err) {
+      return toast(err.message, { kind: "err" });
+    }
+    const ro = state.data?.readOnly;
+    modal({
+      title: "AI settings",
+      body: `<p class="muted">Used for <b>Assess</b> and <b>Compare</b>. Skill contents are sent to this endpoint and nowhere else. Settings are stored in <span class="mono">${esc(state.data?.storeHome || "~/.skill-drawer")}/ai.json</span> (the key is stored there too, readable only by you).</p>
+        <div class="field"><label>Preset</label><select id="ai-preset"><option value="">— pick to fill in the fields —</option>${cfg.presets.map((p) => `<option value="${esc(p.id)}">${esc(p.label)}</option>`).join("")}</select></div>
+        <div class="field"><label>API format</label><select id="ai-provider"><option value="openai" ${cfg.provider === "openai" ? "selected" : ""}>OpenAI-compatible chat completions (POST {baseUrl}/chat/completions)</option><option value="anthropic" ${cfg.provider === "anthropic" ? "selected" : ""}>Anthropic Messages API (POST {baseUrl}/v1/messages)</option></select></div>
+        <div class="field"><label>Base URL</label><input id="ai-base" value="${esc(cfg.baseUrl)}" placeholder="https://api.openai.com/v1" /></div>
+        <div class="field"><label>Model</label><input id="ai-model" value="${esc(cfg.model)}" placeholder="model id as the provider names it" /></div>
+        <div class="field"><label>API key ${cfg.hasKey ? `<span class="muted">(stored: ${esc(cfg.keyHint)}; leave blank to keep)</span>` : ""}</label><input id="ai-key" type="password" autocomplete="off" placeholder="${cfg.hasKey ? "unchanged" : "sk-…  (leave empty for local servers)"}" /></div>
+        <div class="row"><div class="field" style="flex:1"><label>Temperature</label><input id="ai-temp" type="number" step="0.1" min="0" max="2" value="${esc(cfg.temperature)}" /></div><div class="field" style="flex:1"><label>Max output tokens</label><input id="ai-max" type="number" min="256" value="${esc(cfg.maxTokens)}" /></div></div>
+        <div id="ai-result"></div>`,
+      footer: `<button class="btn" id="ai-clear-key" title="Remove the stored key">Forget key</button><button class="btn" id="ai-test">Test</button><button class="btn btn-primary" id="ai-save" ${ro ? "disabled" : ""}>Save</button>`,
+      onOpen(el, close) {
+        const read = () => ({
+          provider: $("#ai-provider", el).value,
+          baseUrl: $("#ai-base", el).value.trim(),
+          model: $("#ai-model", el).value.trim(),
+          apiKey: $("#ai-key", el).value ? $("#ai-key", el).value : "keep",
+          temperature: Number($("#ai-temp", el).value),
+          maxTokens: Number($("#ai-max", el).value),
+        });
+        $("#ai-preset", el).onchange = () => {
+          const p = cfg.presets.find((x) => x.id === $("#ai-preset", el).value);
+          if (!p) return;
+          $("#ai-provider", el).value = p.provider;
+          $("#ai-base", el).value = p.baseUrl;
+          $("#ai-model", el).value = p.model;
+          $("#ai-result", el).innerHTML = p.keyEnv ? `<p class="muted">Tip: the server also reads the <span class="mono">${esc(p.keyEnv)}</span> environment variable if no key is saved.</p>` : "";
+        };
+        $("#ai-test", el).onclick = async () => {
+          $("#ai-result", el).innerHTML = `<p><span class="spinner"></span>Testing…</p>`;
+          try {
+            const r = await api("/api/ai/test", { method: "POST", body: { config: read() } });
+            $("#ai-result", el).innerHTML = `<div class="problem info">Connected: ${esc(r.model)} replied "${esc(r.reply)}" in ${r.ms} ms.</div>`;
+          } catch (err) {
+            $("#ai-result", el).innerHTML = `<div class="problem error">${esc(err.message)}</div>`;
+          }
+        };
+        $("#ai-save", el).onclick = async () => {
+          try {
+            state.ai = await api("/api/ai/config", { method: "PUT", body: read() });
+            toast("AI settings saved", { kind: "ok" });
+            close();
+            if (state.detail) renderDetail();
+          } catch (err) {
+            toast(err.message, { kind: "err" });
+          }
+        };
+        $("#ai-clear-key", el).onclick = async () => {
+          try {
+            state.ai = await api("/api/ai/config", { method: "PUT", body: { apiKey: "" } });
+            $("#ai-key", el).placeholder = "sk-…";
+            toast("Key removed", { kind: "ok" });
+          } catch (err) {
+            toast(err.message, { kind: "err" });
+          }
+        };
       },
     });
   }
@@ -910,7 +1112,7 @@
     }
     const link = (s) => `<li><a data-goto="${s.id}">${esc(s.path || s.name)}</a></li>`;
     const conflicts = data.conflicts.length
-      ? data.conflicts.map((c) => `<div class="issue"><div class="head"><span class="badge badge-${c.severity === "warning" ? "warn" : "info"}">${esc(c.type)}</span>${esc(c.title)}</div><div class="detail">${esc(c.detail)}</div><ul>${c.skills.map(link).join("")}</ul></div>`).join("")
+      ? data.conflicts.map((c) => `<div class="issue"><div class="head"><span class="badge badge-${c.severity === "warning" ? "warn" : "info"}">${esc(c.type)}</span>${esc(c.title)}${c.skills.length === 2 && c.type !== "exact-copy" ? `<span class="spacer"></span><button class="btn btn-sm" data-cmp="${esc(c.skills[0].id)}|${esc(c.skills[1].id)}">Compare (AI)</button>` : ""}</div><div class="detail">${esc(c.detail)}</div><ul>${c.skills.map(link).join("")}</ul></div>`).join("")
       : `<p class="muted">No duplicates or overlapping triggers.</p>`;
     const lint = data.lint.length
       ? data.lint.map((l) => `<div class="issue"><div class="head"><span class="badge badge-${l.status === "error" ? "err" : l.status === "warning" ? "warn" : "info"}">${esc(l.status)}</span><a data-goto="${l.id}">${esc(l.name)}</a> <span class="muted">${esc(l.drawer)}</span></div><ul>${l.problems.map((p) => `<li>${esc(p.message)}</li>`).join("")}</ul></div>`).join("")
@@ -926,6 +1128,7 @@
         <div class="section-title">Risk audit (${data.risk.length})</div>${risk}`,
       onOpen(el, close) {
         $$("[data-goto]", el).forEach((a) => (a.onclick = () => { close(); openSkill(a.dataset.goto); }));
+        $$("[data-cmp]", el).forEach((b) => (b.onclick = () => { const [x, y] = b.dataset.cmp.split("|"); close(); runComparison(x, y); }));
       },
     });
   }
@@ -935,7 +1138,7 @@
       ["j / ↓", "next skill"], ["k / ↑", "previous skill"], ["Enter", "open selected"], ["/", "search"],
       ["x / Space", "mark / unmark"], ["a", "mark all visible"], ["d", "trash marked (or current)"],
       ["e", "disable / enable current"], ["c / m", "copy / move to another agent"], ["n", "new skill"], ["i", "install"], ["t", "trash"], ["!", "issues"],
-      ["1–6", "switch tab"], ["r", "rescan"], ["Esc", "clear marks / close"], ["?", "this help"],
+      ["1–7", "switch tab (7 = AI)"], ["r", "rescan"], ["Esc", "clear marks / close"], ["?", "this help"],
     ];
     modal({
       title: "Keyboard shortcuts",
@@ -979,7 +1182,7 @@
       case "Escape": state.marked.clear(); renderList(); break;
       default: {
         const n = Number(e.key);
-        if (n >= 1 && n <= 6 && cur) { state.tab = ["rendered", "source", "frontmatter", "files", "health", "edit"][n - 1]; renderDetail(); }
+        if (n >= 1 && n <= 7 && cur) { state.tab = ["rendered", "source", "frontmatter", "files", "health", "edit", "ai"][n - 1]; renderDetail(); }
       }
     }
   });
@@ -1002,6 +1205,8 @@
   $("#bulk-move").onclick = () => transferDialog([...state.marked], true);
   $("#bulk-archive").onclick = () => archiveSkills([...state.marked]);
   $("#btn-archive").onclick = archiveDialog;
+  $("#btn-ai").onclick = aiSettingsDialog;
+  $("#bulk-compare").onclick = () => { const [a, b] = [...state.marked]; runComparison(a, b); };
   $("#bulk-export").onclick = () => exportDialog([...state.marked]);
   $("#bulk-clear").onclick = () => { state.marked.clear(); renderList(); };
   $("#btn-new").onclick = newSkillDialog;

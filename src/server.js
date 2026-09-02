@@ -20,6 +20,7 @@ import { exportManifest, importManifest, parseManifest } from "./manifest.js";
 import { installSkills } from "./install.js";
 import { setFrontmatterName, stringifyFrontmatter, replaceFrontmatter, parseFrontmatter } from "./frontmatter.js";
 import { HOME, drawerHome, exists, httpError, removePath, slugify } from "./util.js";
+import { publicConfig, saveConfig, loadConfig, testConnection, assessSkill, compareSkills, clearCache } from "./ai.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
@@ -87,7 +88,8 @@ export function createApp(options = {}) {
       res.status(403).json({ error: "Cross-origin requests are not allowed" });
       return;
     }
-    if (opts.readOnly && req.path.startsWith("/api") && !["GET", "HEAD", "OPTIONS"].includes(req.method) && req.path !== "/api/export") {
+    const readOnlySafe = req.path === "/api/export" || req.path === "/api/ai/assess" || req.path === "/api/ai/compare" || req.path === "/api/ai/test";
+    if (opts.readOnly && req.path.startsWith("/api") && !["GET", "HEAD", "OPTIONS"].includes(req.method) && !readOnlySafe) {
       res.status(403).json({ error: "skill-drawer is running in read-only mode" });
       return;
     }
@@ -97,6 +99,14 @@ export function createApp(options = {}) {
   const wrap = (fn) => (req, res) => {
     try {
       const out = fn(req, res);
+      if (out !== undefined) res.json(out);
+    } catch (err) {
+      res.status(err.status || 500).json({ error: err.message });
+    }
+  };
+  const wrapAsync = (fn) => async (req, res) => {
+    try {
+      const out = await fn(req, res);
       if (out !== undefined) res.json(out);
     } catch (err) {
       res.status(err.status || 500).json({ error: err.message });
@@ -427,6 +437,30 @@ export function createApp(options = {}) {
     const out = purge("archive", req.params.entry);
     invalidate();
     return { purged: out };
+  }));
+
+  // ---- AI: quality assessment and comparison via a user-configured model ----
+  app.get("/api/ai/config", wrap(() => publicConfig()));
+  app.put("/api/ai/config", wrap((req) => saveConfig(req.body || {})));
+  app.post("/api/ai/test", wrapAsync(async (req) => {
+    const cfg = { ...loadConfig(), ...(req.body?.config || {}) };
+    if (req.body?.config?.apiKey === "keep" || req.body?.config?.apiKey === undefined) cfg.apiKey = loadConfig().apiKey;
+    return testConnection(cfg);
+  }));
+  app.post("/api/ai/assess", wrapAsync(async (req) => {
+    const { skill } = findSkill(String(req.body?.id || ""));
+    return assessSkill(readSkill(skill), { force: Boolean(req.body?.force) });
+  }));
+  app.post("/api/ai/compare", wrapAsync(async (req) => {
+    const a = findSkill(String(req.body?.a || "")).skill;
+    const b = findSkill(String(req.body?.b || "")).skill;
+    if (a.id === b.id) throw httpError(400, "Pick two different skills");
+    const out = await compareSkills(readSkill(a), readSkill(b), { force: Boolean(req.body?.force) });
+    return { ...out, a: toCatalogSkill(a), b: toCatalogSkill(b) };
+  }));
+  app.delete("/api/ai/cache", wrap(() => {
+    clearCache();
+    return { ok: true };
   }));
 
   app.get("/api/trash", wrap(() => ({ root: storeRoot("trash"), entries: listStore("trash") })));

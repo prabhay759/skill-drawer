@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.0
+
+- **AI quality assessment.** An Assess (AI) button and an AI tab score a skill 0–100 with a grade, five dimensions (trigger, clarity, completeness, structure, safety), strengths, weaknesses, concrete suggestions and a rewritten description you can apply with one click. `skill-drawer assess <name>` from the CLI.
+- **AI comparison of two skills.** Compare with… on any skill, Compare (AI) when exactly two are marked, and a Compare button on every two-skill conflict in the Issues panel. Reports overlap, whether they do the same job, quality of each, a keep-A / keep-B / keep-both / merge recommendation with rationale, a merge plan and a trigger fix. `skill-drawer compare <a> <b>`.
+- **Bring your own model.** AI ⚙ in the top bar: pick a preset (OpenAI, Anthropic native or OpenAI-compatible, OpenRouter, Groq, Ollama, LM Studio, custom) or enter any base URL, model and API key. Two wire formats: OpenAI chat completions and Anthropic Messages. Settings in `~/.skill-drawer/ai.json` (mode 600) or via `SKILL_DRAWER_AI_*` environment variables; the key can also come from `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` etc. Test button. Results are cached by model and content hash; Re-assess bypasses the cache.
+
 ## 0.2.0
 
 - **Per-agent classification.** Every drawer and skill carries the agent that reads it (Claude Code, Cursor, Codex, Gemini, GitHub Copilot, Windsurf, Kiro, OpenCode and more; unknown dot-folders are named after the folder). The sidebar is an agent tree with drawers nested underneath, cards show an agent chip, sort by agent is the default, and `skill-drawer agents` groups from the CLI.

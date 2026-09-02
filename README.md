@@ -62,6 +62,23 @@ Requires Node 20+. `git` is needed only for installing skills from GitHub.
 
 Every agent reads its own folder, so a skill written for Claude Code is invisible to Cursor until it is copied there. Select a skill (or mark several), click **Copy to…** and pick the target drawer; the picker is grouped by agent. **Move to…** does the same but removes the original. Copies are real folders, never symlinks, so the target tool's updater cannot break them.
 
+### AI assessment and comparison
+
+Click **AI ⚙** in the top bar once and point Skill Drawer at a model. Presets fill in OpenAI, Anthropic (native Messages API or the OpenAI-compatible endpoint), OpenRouter, Groq, Ollama and LM Studio; or type any base URL that speaks OpenAI chat completions, a model id, and an API key. Test, then Save. The key is stored in `~/.skill-drawer/ai.json` readable only by you, or you can leave it out and set `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`, `GROQ_API_KEY`, or `SKILL_DRAWER_AI_API_KEY` in the environment instead. `SKILL_DRAWER_AI_BASE_URL`, `SKILL_DRAWER_AI_MODEL` and `SKILL_DRAWER_AI_PROVIDER` override the saved settings.
+
+- **Assess (AI)** on a skill opens the AI tab: a score out of 100 and a grade, five dimensions (trigger, clarity, completeness, structure, safety) with notes, strengths, weaknesses, specific suggestions, and a rewritten description with an Apply button.
+- **Compare with…** on a skill, **Compare (AI)** when exactly two skills are marked, or the Compare button on any two-skill conflict in Issues: overlap percentage, whether they do the same job, a quality score for each, a keep-A / keep-B / keep-both / merge recommendation with rationale, a merge plan, and a suggested rewrite so the agent can tell their triggers apart.
+
+What is sent: the skill's frontmatter, body, file list and the static lint and risk findings, to the endpoint you configured and nowhere else. Results are cached by model and content hash, so re-opening is free; Re-assess bypasses the cache. Bodies over 60,000 characters are cut for the model and the result says so.
+
+```
+skill-drawer ai set preset=ollama model=llama3.1
+skill-drawer ai set preset=anthropic apiKey=sk-ant-…
+skill-drawer ai test
+skill-drawer assess pdf-tools
+skill-drawer compare pdf-tools pdf-helper --json
+```
+
 ### Disable vs archive vs trash
 
 - **Disable** pauses a skill. It stays listed in grey under its agent and comes back with one click.
@@ -114,6 +131,9 @@ skill-drawer archive list            what is shelved
 skill-drawer unarchive <entry> [--drawer <dir>]
 skill-drawer copy <name|path> --drawer <dir> [--overwrite]
 skill-drawer move <name|path> --drawer <dir> [--overwrite]
+skill-drawer ai [show|set k=v…|test|presets|clear-cache]
+skill-drawer assess <name|path> [--json] [--force]
+skill-drawer compare <a> <b> [--json] [--force]
 skill-drawer trash [list|restore <entry>|purge <entry>|empty]
 ```
 
@@ -147,6 +167,7 @@ A skill is a folder with a `SKILL.md` (or `skill.md`), or a loose `*.md` file di
 | `SKILL_DRAWER_READ_ONLY=1` | read-only mode |
 | `SKILL_DRAWER_HOME` | where trash and disabled skills live (default `~/.skill-drawer`) |
 | `SKILL_DRAWER_EDITOR`, `VISUAL`, `EDITOR` | used by "Open in editor" |
+| `SKILL_DRAWER_AI_PROVIDER`, `SKILL_DRAWER_AI_BASE_URL`, `SKILL_DRAWER_AI_MODEL`, `SKILL_DRAWER_AI_API_KEY` | override the saved AI settings |
 
 ## Programmatic use
 
