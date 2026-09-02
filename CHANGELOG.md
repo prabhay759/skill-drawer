@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.1
+
+- **A top bar of five controls.** New, Install and the Shelf menu leave the top bar, which is now just search, **Checks**, AI settings, rescan, theme and help.
+- **New and Install move to the list header**, where they default to the drawer you are currently viewing instead of always guessing `~/.claude/skills`. Import and Export sit beside them under `⋯`.
+- **Archived and Deleted move to the sidebar**, under a Shelf section with Disabled — the three places a skill sits when it is not active, next to the agents and drawers where active skills live. Nothing became unreachable: trash restore is the undo for a destructive action, so it keeps a visible home.
+- Panels are named for the place (**Archived**, **Deleted**) while the buttons on a skill keep the verb (Archive, Trash), so the two never read the same again.
+
 ## 0.5.0
 
 - **Toolbar without duplicate labels.** The top bar had `Export`, `Archive` and `Trash`, which also exist as buttons on a skill and mean something different there (a place versus an action). They now live in two menus: **Checks** (Quality report, Overlap report, Issues) and **Shelf** (Archived, Deleted, Import, Export). Thirteen buttons become six, and the search box no longer gets squeezed out on a narrow window.

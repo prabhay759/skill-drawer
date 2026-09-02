@@ -80,6 +80,12 @@ Skill Drawer started from a review of [skill-cabinet](https://github.com/subsy/s
 - A custom agent whose folder already existed was reported as an empty placeholder, because only `~/.<tool>/skills` paths were covered by the home scan.
 - Agent presence was computed from the real home directory even when the server was started with an explicit `home`, so tests and sandboxed runs saw the wrong agents.
 
+## Added in 0.5.1
+
+| Request | What was built |
+|---|---|
+| **Drop New, Install and Shelf from the top bar** | The top bar is now search, Checks, AI, rescan, theme and help. New and Install moved to the list header and default to the drawer in view (previously always `~/.claude/skills`), with Import and Export under a `⋯` menu beside them. Archived and Deleted moved into a sidebar **Shelf** section together with Disabled, so every "place a skill can be" sits in one column. Trash restore stays visible because it is the undo for a destructive action, and the panels were renamed to Archived/Deleted so they no longer share a label with the Archive/Trash buttons on a skill. |
+
 ## Out of scope, on purpose
 
 - **Multi-user or remote access.** The server binds to 127.0.0.1 and has no auth; putting it on a network would need both.

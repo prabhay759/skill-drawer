@@ -130,6 +130,12 @@
     });
   }
 
+  /** The writable drawer the user is looking at, if any. */
+  function currentDrawerId() {
+    const d = (state.data?.drawers || []).find((x) => x.id === state.drawer && x.writable);
+    return d ? d.id : null;
+  }
+
   function drawerOptions(selectedId, { exclude = [] } = {}) {
     const writable = (state.data?.drawers || []).filter((d) => d.writable && !exclude.includes(d.id));
     const def = writable.find((d) => /\.claude\/skills$/.test(d.root)) || writable[0];
@@ -192,7 +198,6 @@
         </button>`;
       }
     }
-    if (census.disabled) html += `<button class="agent-item ${state.drawer === "__disabled" ? "active" : ""}" data-drawer="__disabled"><span class="lbl">Disabled</span><span class="count">${census.disabled}</span></button>`;
     $("#drawers").innerHTML = html;
     $$("[data-toggle]", $("#drawers")).forEach((c) => (c.onclick = (e) => {
       e.stopPropagation();
@@ -201,8 +206,31 @@
       persistClosed();
       renderDrawers();
     }));
-    $$("[data-agent]", $("#drawers")).forEach((b) => (b.onclick = () => { state.agent = b.dataset.agent; state.drawer = "all"; renderDrawers(); applyFilters(); }));
-    $$("[data-drawer]", $("#drawers")).forEach((b) => (b.onclick = () => { state.drawer = b.dataset.drawer; state.agent = b.dataset.agentOf || "all"; renderDrawers(); applyFilters(); }));
+    $$("[data-agent]", $("#drawers")).forEach((b) => (b.onclick = () => { state.agent = b.dataset.agent; state.drawer = "all"; renderDrawers(); renderShelf(); applyFilters(); }));
+    $$("[data-drawer]", $("#drawers")).forEach((b) => (b.onclick = () => { state.drawer = b.dataset.drawer; state.agent = b.dataset.agentOf || "all"; renderDrawers(); renderShelf(); applyFilters(); }));
+  }
+
+  function renderShelf() {
+    const c = state.data.census;
+    $("#shelf-list").innerHTML = `
+      <button class="shelf-item ${state.drawer === "__disabled" ? "active" : ""}" data-shelf="disabled" title="Skills moved out of the way but kept in place; shown in the list">
+        <span>Disabled</span><span class="count">${c.disabled}</span></button>
+      <button class="shelf-item" data-shelf="archived" title="Skills shelved outside every agent">
+        <span>Archived</span><span class="row" style="gap:6px"><span class="count">${c.archived}</span><span class="go">›</span></span></button>
+      <button class="shelf-item" data-shelf="trashed" title="Deleted skills you can still restore">
+        <span>Deleted</span><span class="row" style="gap:6px"><span class="count">${c.trash}</span><span class="go">›</span></span></button>`;
+    $$("[data-shelf]", $("#shelf-list")).forEach((b) => (b.onclick = () => {
+      const kind = b.dataset.shelf;
+      if (kind === "disabled") {
+        state.drawer = state.drawer === "__disabled" ? "all" : "__disabled";
+        state.agent = "all";
+        renderDrawers();
+        renderShelf();
+        applyFilters();
+        return;
+      }
+      (kind === "archived" ? archiveDialog : trashDialog)();
+    }));
   }
 
   function renderCensus() {
@@ -219,11 +247,7 @@
     $("#checks-count").hidden = !issues;
     $("#checks-count").textContent = issues;
     $("#menu-issues-hint").textContent = issues ? `${issues} to review` : "none open";
-    const shelved = c.trash + c.archived;
-    $("#shelf-count").hidden = !shelved;
-    $("#shelf-count").textContent = shelved;
-    $("#menu-archived-hint").textContent = c.archived ? `${c.archived} shelved` : "empty";
-    $("#menu-trash-hint").textContent = c.trash ? `${c.trash} restorable` : "empty";
+    renderShelf();
   }
 
   /* ---------- Filtering & list ---------- */
@@ -817,7 +841,7 @@
             <button class="btn btn-sm btn-danger" data-purge="${esc(e.entryId)}">Delete</button>`}</div></div>`).join("")
       : `<p class="muted">The archive is empty. Archive a skill from its toolbar or the selection bar.</p>`;
     modal({
-      title: `Archive (${data.entries.length})`,
+      title: `Archived (${data.entries.length})`,
       wide: true,
       body: `<p class="muted mono">${esc(data.root)}</p>${rows}`,
       onOpen(el, close) {
@@ -1291,7 +1315,7 @@
       title: "Import manifest or bundle",
       body: `<div class="field"><label>File</label><input type="file" id="import-file" accept="application/json,.json" /></div>
         <div class="field"><label>Or paste JSON</label><textarea id="import-text" placeholder='{"format":"skill-drawer-bundle", ...}'></textarea></div>
-        <div class="field"><label>Into drawer</label><select id="import-drawer">${drawerOptions()}</select></div>
+        <div class="field"><label>Into drawer</label><select id="import-drawer">${drawerOptions(currentDrawerId())}</select></div>
         <label class="check"><input type="checkbox" id="import-overwrite" /> Overwrite skills that already exist</label>
         <label class="check"><input type="checkbox" id="import-fetch" checked /> Fetch manifest-only entries from their GitHub origin (needs git)</label>
         <div id="import-result"></div>`,
@@ -1333,7 +1357,7 @@
     modal({
       title: "Install skills",
       body: `<div class="field"><label>Source — owner/repo, owner/repo/path/to/skill, a GitHub URL, or a local folder</label><input id="install-src" placeholder="anthropics/skills/skills/pdf" /></div>
-        <div class="field"><label>Into drawer</label><select id="install-drawer">${drawerOptions()}</select></div>
+        <div class="field"><label>Into drawer</label><select id="install-drawer">${drawerOptions(currentDrawerId())}</select></div>
         <label class="check"><input type="checkbox" id="install-overwrite" /> Overwrite skills that already exist</label>
         <p class="muted">Every folder containing a SKILL.md under the source is installed. Requires <code>git</code> for GitHub sources.</p>
         <div id="install-result"></div>`,
@@ -1363,7 +1387,7 @@
       title: "New skill",
       body: `<div class="field"><label>Name (lowercase, hyphens)</label><input id="new-name" placeholder="my-skill" /></div>
         <div class="field"><label>Description — what it does and when to use it</label><input id="new-desc" placeholder="Use when …" /></div>
-        <div class="field"><label>Drawer</label><select id="new-drawer">${drawerOptions()}</select></div>`,
+        <div class="field"><label>Drawer</label><select id="new-drawer">${drawerOptions(currentDrawerId())}</select></div>`,
       footer: `<button class="btn btn-primary" id="new-go">Create</button>`,
       onOpen(el, close) {
         $("#new-name", el).focus();
@@ -1395,7 +1419,7 @@
           <div class="row">${ro ? "" : `<button class="btn btn-sm btn-primary" data-restore="${esc(e.entryId)}">Restore</button><button class="btn btn-sm btn-danger" data-purge="${esc(e.entryId)}">Delete</button>`}</div></div>`).join("")
       : `<p class="muted">Trash is empty.</p>`;
     modal({
-      title: `Trash (${data.entries.length})`,
+      title: `Deleted (${data.entries.length})`,
       wide: true,
       body: `<p class="muted mono">${esc(data.root)}</p>${rows}`,
       footer: data.entries.length && !ro ? `<button class="btn btn-danger" id="trash-empty">Empty trash</button>` : "",
@@ -1411,7 +1435,7 @@
         }));
         const empty = $("#trash-empty", el);
         if (empty) empty.onclick = async () => {
-          if (!(await confirm({ title: "Empty trash?", message: `All ${data.entries.length} entries will be removed permanently.`, ok: "Empty", danger: true }))) return;
+          if (!(await confirm({ title: "Empty the trash?", message: `All ${data.entries.length} deleted skills will be removed permanently.`, ok: "Delete all", danger: true }))) return;
           try { await api("/api/trash", { method: "DELETE" }); close(); await load(true); toast("Trash emptied", { kind: "ok" }); }
           catch (err) { toast(err.message, { kind: "err" }); }
         };
@@ -1544,7 +1568,7 @@
     m.hidden = true;
     m.previousElementSibling?.setAttribute("aria-expanded", "false");
   });
-  for (const [btn, menu] of [["#btn-checks", "#menu-checks"], ["#btn-shelf", "#menu-shelf"]]) {
+  for (const [btn, menu] of [["#btn-checks", "#menu-checks"], ["#btn-transfer", "#menu-transfer"]]) {
     $(btn).onclick = (e) => {
       e.stopPropagation();
       const el = $(menu);

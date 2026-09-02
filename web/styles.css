@@ -307,3 +307,11 @@ table.grid a { cursor: pointer; }
 .group-head .chev { transition: transform .12s; display: inline-block; }
 .group-head.closed .chev { transform: rotate(-90deg); }
 .group-head .count { margin-left: auto; text-transform: none; letter-spacing: 0; }
+
+.head-actions { display: flex; gap: 6px; align-items: center; }
+.head-actions .menu { left: 0; right: auto; }
+.shelf-item { display: flex; justify-content: space-between; align-items: center; gap: 6px; padding: 5px 8px; border-radius: var(--radius); cursor: pointer; border: 0; background: none; text-align: left; width: 100%; }
+.shelf-item:hover { background: var(--bg-hover); }
+.shelf-item.active { background: var(--bg-3); color: var(--accent); }
+.shelf-item .count { color: var(--fg-3); font-size: 12px; }
+.shelf-item .go { color: var(--fg-3); font-size: 11px; }

@@ -59,7 +59,9 @@ Requires Node 20+. `git` is needed only for installing skills from GitHub.
 - **Left**: agents that were found, each with its drawers nested underneath (user, plugin, builtin, project). Click an agent to see everything it loads, or a drawer for just that folder; "edit" beside the heading shows, hides or adds agents. Quick filters (lint problems, risk findings, duplicates, disabled), sort (drawer, name, recently modified, recently added, largest, riskiest, most lint).
 - **Middle**: the skills, grouped into collapsible per-agent sections (untick "Group by agent" for a flat list), with badges for lint status, risk level, identical copies, symlinks, single-file skills, project scope and tool-managed drawers. Mark several to trash, disable or export them together.
 - **Right**: the selected skill. Toolbar: Disable, Edit, Rename, Copy to…, Move to…, Archive, Open in editor, Export, Trash. Tabs for the rendered body, raw source, frontmatter and signals (modified / added / size / hash / copies), files, health (lint problems + risk findings), and Edit, which has a metadata form and a file editor with New file and Delete file.
-- **Top**: New, Install, **Checks** (Quality report, Overlap report, Issues) and **Shelf** (Archived, Deleted, Import, Export), plus AI settings, rescan, theme and help. The per-skill Archive, Trash and Export buttons live on the skill itself; the menus hold the places those skills go.
+- **Top**: search, **Checks** (Quality report, Overlap report, Issues), AI settings, rescan, theme and help.
+- **Above the list**: New and Install, which default to the drawer you are viewing, plus `⋯` for Import and Export.
+- **Sidebar Shelf**: Disabled, Archived and Deleted — the three places a skill sits when no agent is loading it. Deleted is where you restore something you trashed.
 
 ### Moving skills between agents
 
