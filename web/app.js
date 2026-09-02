@@ -36,7 +36,11 @@
     editorDirty: false,
     ai: null,
     assessments: {},
+    closedAgents: new Set(),
+    comparisons: {},
   };
+  try { for (const id of JSON.parse(localStorage.getItem("skill-drawer-closed-agents") || "[]")) state.closedAgents.add(id); } catch { /* ignore */ }
+  function persistClosed() { try { localStorage.setItem("skill-drawer-closed-agents", JSON.stringify([...state.closedAgents])); } catch { /* ignore */ } }
 
   /* ---------- API ---------- */
   async function api(path, opts = {}) {
@@ -166,20 +170,31 @@
     const total = state.skills.filter((s) => !s.disabled).length;
     const byId = new Map(drawers.map((d) => [d.id, d]));
     const allActive = state.agent === "all" && state.drawer === "all";
-    let html = `<button class="agent-item ${allActive ? "active" : ""}" data-agent="all"><span>All agents</span><span class="count">${total}</span></button>`;
+    let html = `<button class="agent-item ${allActive ? "active" : ""}" data-agent="all"><span class="lbl">All agents</span><span class="count">${total}</span></button>`;
     for (const a of agents) {
-      html += `<button class="agent-item ${state.agent === a.id && state.drawer === "all" ? "active" : ""}" data-agent="${esc(a.id)}"><span>${esc(a.label)}</span><span class="count">${a.count}</span></button>`;
+      const closed = state.closedAgents.has(a.id);
+      html += `<button class="agent-item ${state.agent === a.id && state.drawer === "all" ? "active" : ""} ${closed ? "closed" : ""}" data-agent="${esc(a.id)}" title="${esc(a.installed ? `Detected: ${a.via.join(", ")}` : "Not detected on this machine; a skills folder exists")}">
+        <span class="lbl"><span class="chev" data-toggle="${esc(a.id)}" title="${closed ? "Open" : "Close"} this drawer group">▾</span><span>${esc(a.label)}</span>${a.installed ? "" : `<span class="inst">folder only</span>`}</span><span class="count">${a.count}</span></button>`;
+      if (closed) continue;
       for (const id of a.drawers) {
         const d = byId.get(id);
         if (!d) continue;
-        html += `<button class="drawer-item nested ${state.drawer === d.id ? "active" : ""}" data-drawer="${esc(d.id)}" data-agent-of="${esc(a.id)}" title="${esc(d.root)}">
+        const ghost = d.exists === false;
+        html += `<button class="drawer-item nested ${ghost ? "ghost" : ""} ${state.drawer === d.id ? "active" : ""}" data-drawer="${esc(d.id)}" data-agent-of="${esc(a.id)}" title="${esc(ghost ? `${d.root} (not created yet; copy or install a skill here to create it)` : d.root)}">
           <span class="label">${esc(d.label)}</span>
-          <span class="right"><span class="kind">${esc(d.kind === "user" ? "" : d.kind)}</span><span class="count">${d.count}</span></span>
+          <span class="right"><span class="kind">${esc(d.kind === "user" ? "" : d.kind)}</span><span class="count">${ghost ? "—" : d.count}</span></span>
         </button>`;
       }
     }
-    if (census.disabled) html += `<button class="agent-item ${state.drawer === "__disabled" ? "active" : ""}" data-drawer="__disabled"><span>Disabled</span><span class="count">${census.disabled}</span></button>`;
+    if (census.disabled) html += `<button class="agent-item ${state.drawer === "__disabled" ? "active" : ""}" data-drawer="__disabled"><span class="lbl">Disabled</span><span class="count">${census.disabled}</span></button>`;
     $("#drawers").innerHTML = html;
+    $$("[data-toggle]", $("#drawers")).forEach((c) => (c.onclick = (e) => {
+      e.stopPropagation();
+      const id = c.dataset.toggle;
+      if (state.closedAgents.has(id)) state.closedAgents.delete(id); else state.closedAgents.add(id);
+      persistClosed();
+      renderDrawers();
+    }));
     $$("[data-agent]", $("#drawers")).forEach((b) => (b.onclick = () => { state.agent = b.dataset.agent; state.drawer = "all"; renderDrawers(); applyFilters(); }));
     $$("[data-drawer]", $("#drawers")).forEach((b) => (b.onclick = () => { state.drawer = b.dataset.drawer; state.agent = b.dataset.agentOf || "all"; renderDrawers(); applyFilters(); }));
   }
@@ -234,6 +249,7 @@
       size: (a, b) => b.bytes - a.bytes,
       risk: (a, b) => RISK[b.risk] - RISK[a.risk] || a.name.localeCompare(b.name),
       lint: (a, b) => LINT[b.lint] - LINT[a.lint] || b.lintCount - a.lintCount,
+      quality: (a, b) => (a.qualityScore ?? 101) - (b.qualityScore ?? 101),
     };
     list.sort(by[state.sort] || by.agent);
     state.filtered = list;
@@ -243,6 +259,7 @@
   function badges(s) {
     const out = [];
     if (s.disabled) out.push(`<span class="badge badge-muted">disabled</span>`);
+    if (s.qualityScore !== null && s.qualityScore !== undefined) out.push(`<span class="qchip q-${esc(s.qualityGrade)}" title="Static quality score (Quality panel explains it)">Q${s.qualityScore}</span>`);
     if (s.lint === "error") out.push(`<span class="badge badge-err" title="Lint errors">${s.lintCount} lint</span>`);
     else if (s.lint === "warning") out.push(`<span class="badge badge-warn" title="Lint warnings">${s.lintCount} lint</span>`);
     if (RISK[s.risk] >= 3) out.push(`<span class="badge badge-err">${esc(s.risk)} risk</span>`);
@@ -259,7 +276,12 @@
     const list = $("#list");
     $("#list-summary").textContent = `${state.filtered.length} skill${state.filtered.length === 1 ? "" : "s"}`;
     if (!state.filtered.length) {
-      list.innerHTML = `<div class="empty">${state.skills.length ? "Nothing matches." : "No skills found in any drawer. Install one or create a new skill."}</div>`;
+      const d = state.data.drawers.find((x) => x.id === state.drawer);
+      const hint = d && d.exists === false
+        ? `This drawer does not exist yet. Copy, move or install a skill into <span class="mono">${esc(d.root)}</span> and it will be created. <button class="btn btn-sm" id="open-drawer">Create &amp; open folder</button>`
+        : state.skills.length ? "Nothing matches." : "No skills found in any drawer. Install one or create a new skill.";
+      list.innerHTML = `<div class="empty">${hint}</div>`;
+      $("#open-drawer")?.addEventListener("click", () => api("/api/drawers/open", { method: "POST", body: { id: state.drawer } }).then(() => load(true)).catch((e) => toast(e.message, { kind: "err" })));
     } else {
       list.innerHTML = state.filtered
         .map(
@@ -862,14 +884,20 @@
       return toast(err.message, { kind: "err", timeout: 10000 });
     }
     m.close();
+    state.comparisons[[aId, bId].sort().join("|")] = r;
+    let stat = null;
+    let diff = null;
+    try { stat = (await api(`/api/overlap?ids=${aId},${bId}&threshold=0`)).pairs[0] || null; } catch { stat = null; }
+    try { diff = await api(`/api/skills/${aId}/diff?other=${bId}`); } catch { diff = null; }
     const c = r.result || {};
+    const pct = (x) => `${Math.round((x || 0) * 100)}%`;
     const ul = (items) => (items?.length ? `<ul>${items.map((i) => `<li>${esc(i)}</li>`).join("")}</ul>` : `<p class="muted">—</p>`);
     const recLabel = { "keep-a": `Keep A (${r.a.name}) and drop B`, "keep-b": `Keep B (${r.b.name}) and drop A`, "keep-both": "Keep both", merge: "Merge them into one" }[c.recommendation] || c.recommendation;
     modal({
       title: `AI comparison: ${r.a.name} vs ${r.b.name}`,
       wide: true,
       body: `<p>${esc(c.summary || "")}</p>
-        <div class="row" style="gap:16px"><span>Overlap <b>${esc(c.overlap)}%</b></span><span>Same job: <b>${c.sameJob ? "yes" : "no"}</b></span><span>Quality A <b>${esc(c.scoreA)}</b> · B <b>${esc(c.scoreB)}</b></span></div>
+        <div class="row" style="gap:16px"><span>AI overlap <b>${esc(c.overlap)}%</b></span><span>Same job: <b>${c.sameJob ? "yes" : "no"}</b></span><span>AI quality A <b>${esc(c.scoreA)}</b> · B <b>${esc(c.scoreB)}</b></span>${stat ? `<span class="muted">Static: ${pct(stat.score)} (description ${pct(stat.description)}, body ${pct(stat.body)}, name ${pct(stat.name)})</span>` : ""}<span class="muted">Static quality A ${esc(r.a.qualityScore)} · B ${esc(r.b.qualityScore)}</span></div>
         <div class="rec"><b>${esc(recLabel)}</b><div>${esc(c.rationale || "")}</div></div>
         <div class="cmp-grid">
           <div class="cmp-col"><h3>A · ${esc(r.a.name)} <span class="agent-chip">${esc(r.a.agentLabel)}</span></h3><div class="muted mono" style="font-size:11px">${esc(r.a.path)}</div><div class="section-title">Does better</div>${ul(c.strengthsA)}</div>
@@ -878,12 +906,29 @@
         <div class="section-title">Differences</div>${ul(c.differences)}
         ${c.mergePlan?.length ? `<div class="section-title">Merge plan</div>${ul(c.mergePlan)}` : ""}
         ${c.triggerFix ? `<div class="section-title">Trigger fix</div><div class="notice">${esc(c.triggerFix)}</div>` : ""}
+        ${!state.data.readOnly ? `<div class="section-title">Quick actions</div><div class="row">
+          ${r.a.writable ? `<button class="btn btn-sm" data-desc="b2a" title="Overwrite A's description with B's">Use B's description on A</button>` : ""}
+          ${r.b.writable ? `<button class="btn btn-sm" data-desc="a2b" title="Overwrite B's description with A's">Use A's description on B</button>` : ""}
+          ${r.a.writable && r.b.writable ? `<button class="btn btn-sm" data-trash="${c.recommendation === "keep-a" ? "b" : c.recommendation === "keep-b" ? "a" : ""}" ${c.recommendation === "keep-a" || c.recommendation === "keep-b" ? "" : "hidden"}>Trash ${c.recommendation === "keep-a" ? "B" : "A"} as recommended</button>` : ""}
+        </div>` : ""}
+        <div class="section-title">SKILL.md diff (A → B)${diff ? ` <span class="muted">+${diff.added} −${diff.removed}</span>` : ""}</div>
+        ${diff ? (diff.same ? `<p class="muted">The two SKILL.md files are identical.</p>` : `<div class="diff">${diff.ops.map((o) => `<div class="${o.type}">${o.type === "add" ? "+" : o.type === "del" ? "−" : " "} ${esc(o.text)}</div>`).join("")}</div>`) : `<p class="muted">Diff unavailable.</p>`}
         <div class="ai-meta">${esc(r.model)} via ${esc(r.provider)} · ${r.cached ? "cached" : `${Math.round((r.ms || 0) / 1000)}s`}${r.truncated ? " · a body was truncated for the model" : ""}</div>`,
       footer: `<button class="btn" id="cmp-open-a">Open A</button><button class="btn" id="cmp-open-b">Open B</button><button class="btn" id="cmp-again">Re-compare</button>`,
       onOpen(el, close) {
         $("#cmp-open-a", el).onclick = () => { close(); openSkill(r.a.id); };
         $("#cmp-open-b", el).onclick = () => { close(); openSkill(r.b.id); };
         $("#cmp-again", el).onclick = () => { close(); runComparison(aId, bId, { force: true }); };
+        $$("[data-desc]", el).forEach((b) => (b.onclick = async () => {
+          const [from, to] = b.dataset.desc === "b2a" ? [r.b, r.a] : [r.a, r.b];
+          try {
+            const data = { ...(to.frontmatter || {}), name: to.frontmatter?.name ?? to.slug, description: from.frontmatter?.description ?? from.description };
+            await api(`/api/skills/${to.id}/frontmatter`, { method: "PUT", body: { data } });
+            toast(`Description copied to ${to.name}`, { kind: "ok" });
+            await load(true);
+          } catch (err) { toast(err.message, { kind: "err" }); }
+        }));
+        $$("[data-trash]", el).forEach((b) => (b.onclick = () => { const victim = b.dataset.trash === "a" ? r.a : r.b; close(); removeSkills([victim.id], false); }));
       },
     });
   }
@@ -955,6 +1000,161 @@
         };
       },
     });
+  }
+
+  /* ---------- Quality & overlap panels ---------- */
+  const sbar = (score, max = 100) => { const pct = Math.round((score / max) * 100); const cls = pct >= 70 ? "ok" : pct >= 50 ? "warn" : "err"; return `<span class="sbar ${cls}"><i style="width:${pct}%"></i></span>`; };
+
+  async function qualityPanel() {
+    let rows;
+    try {
+      rows = await api(`/api/quality?agent=${encodeURIComponent(state.agent)}`);
+    } catch (err) {
+      return toast(err.message, { kind: "err" });
+    }
+    const scope = state.agent === "all" ? "all agents" : state.data.agents.find((a) => a.id === state.agent)?.label || state.agent;
+    const aiCell = (id) => {
+      const a = state.assessments[id];
+      if (a === "loading") return `<span class="spinner"></span>`;
+      if (!a) return `<a data-assess="${esc(id)}">assess</a>`;
+      return `${sbar(a.result?.score ?? 0)}<b>${esc(a.result?.score)}</b> <span class="muted">${esc(a.result?.grade || "")}</span>`;
+    };
+    const render = (el) => {
+      $("#q-table", el).innerHTML = `<table class="grid"><thead><tr><th>Static</th><th>Skill</th><th>Agent</th><th>Fix first</th><th>AI</th></tr></thead><tbody>${rows
+        .map((r) => `<tr>
+          <td>${sbar(r.quality.score)}<b>${r.quality.score}</b> <span class="qchip q-${esc(r.quality.grade)}">${esc(r.quality.grade)}</span></td>
+          <td><a data-goto="${esc(r.id)}">${esc(r.name)}</a>${r.disabled ? ` <span class="badge badge-muted">disabled</span>` : ""}</td>
+          <td><span class="agent-chip">${esc(r.agentLabel)}</span></td>
+          <td class="muted" style="font-size:12.5px">${esc(r.quality.parts.filter((p) => p.points < p.max).sort((x, y) => (y.max - y.points) - (x.max - x.points)).slice(0, 2).map((p) => `${p.label}: ${p.note}`).join(" · ") || "nothing major")}</td>
+          <td data-ai="${esc(r.id)}">${aiCell(r.id)}</td></tr>`)
+        .join("")}</tbody></table>`;
+      $$("[data-goto]", el).forEach((a) => (a.onclick = () => { m.close(); openSkill(a.dataset.goto); }));
+      $$("[data-assess]", el).forEach((a) => (a.onclick = () => runOne(a.dataset.assess)));
+    };
+    const runOne = async (id) => {
+      if (aiNotReady()) return aiSettingsDialog();
+      state.assessments[id] = "loading";
+      render(m.el);
+      try { state.assessments[id] = await api("/api/ai/assess", { method: "POST", body: { id } }); }
+      catch (err) { delete state.assessments[id]; toast(err.message, { kind: "err" }); }
+      render(m.el);
+    };
+    const m = modal({
+      title: `Quality check — ${scope} (${rows.length})`,
+      wide: true,
+      body: `<div class="panel-tools">
+          <span class="muted">Static score: frontmatter 20 · description-as-trigger 30 · instructions 25 · safety 15 · structure 10. AI score: your configured model's judgement.</span>
+          <span class="spacer"></span>
+          <button class="btn btn-sm btn-primary" id="q-all">Assess all with AI</button>
+          <div class="progress" id="q-prog" hidden><i style="width:0"></i></div>
+        </div>
+        <div id="q-table"></div>`,
+    });
+    render(m.el);
+    $("#q-all", m.el).onclick = async () => {
+      if (aiNotReady()) return aiSettingsDialog();
+      const todo = rows.filter((r) => !state.assessments[r.id] || state.assessments[r.id] === "loading").map((r) => r.id);
+      if (!todo.length) return toast("Everything is already assessed", { timeout: 2000 });
+      const prog = $("#q-prog", m.el);
+      prog.hidden = false;
+      let done = 0;
+      const worker = async () => {
+        while (todo.length) {
+          const id = todo.shift();
+          await runOne(id);
+          done += 1;
+          $("i", prog).style.width = `${Math.round((done / rows.length) * 100)}%`;
+        }
+      };
+      await Promise.all([worker(), worker()]);
+      prog.hidden = true;
+      toast("Quality check complete", { kind: "ok" });
+      if (state.detail) renderDetail();
+    };
+  }
+
+  async function overlapPanel() {
+    let threshold = 0.35;
+    let data;
+    const fetchPairs = async () => api(`/api/overlap?agent=${encodeURIComponent(state.agent)}&threshold=${threshold}`);
+    try {
+      data = await fetchPairs();
+    } catch (err) {
+      return toast(err.message, { kind: "err" });
+    }
+    const scope = state.agent === "all" ? "all agents" : state.data.agents.find((a) => a.id === state.agent)?.label || state.agent;
+    const key = (p) => [p.a.id, p.b.id].sort().join("|");
+    const verdict = (p) => {
+      const c = state.comparisons[key(p)];
+      if (c === "loading") return `<span class="spinner"></span>`;
+      if (!c) return `<a data-check="${esc(p.a.id)}|${esc(p.b.id)}">check with AI</a>`;
+      const r = c.result || {};
+      const rec = { "keep-a": "keep A", "keep-b": "keep B", "keep-both": "keep both", merge: "merge" }[r.recommendation] || r.recommendation;
+      return `<b>${esc(r.overlap)}%</b> ${r.sameJob ? "same job" : "different jobs"} · <b>${esc(rec)}</b> <a data-open="${esc(p.a.id)}|${esc(p.b.id)}">details</a>`;
+    };
+    const render = (el) => {
+      const pct = (x) => `${Math.round(x * 100)}%`;
+      $("#o-summary", el).textContent = `${data.total} pair${data.total === 1 ? "" : "s"} above ${Math.round(threshold * 100)}% among ${data.considered} skills`;
+      $("#o-table", el).innerHTML = data.pairs.length
+        ? `<table class="grid"><thead><tr><th>Overlap</th><th>Skill A</th><th>Skill B</th><th>Where</th><th>AI verdict</th></tr></thead><tbody>${data.pairs
+          .map((p) => `<tr>
+            <td title="name ${pct(p.name)} · description ${pct(p.description)} · body ${pct(p.body)}">${sbar(p.score * 100)}<b>${pct(p.score)}</b><div class="muted" style="font-size:11px">${p.identical ? "identical copies" : `desc ${pct(p.description)} · body ${pct(p.body)} · name ${pct(p.name)}`}</div></td>
+            <td><a data-goto="${esc(p.a.id)}">${esc(p.a.name)}</a><div class="muted" style="font-size:11px">${esc(p.a.agentLabel)}</div></td>
+            <td><a data-goto="${esc(p.b.id)}">${esc(p.b.name)}</a><div class="muted" style="font-size:11px">${esc(p.b.agentLabel)}</div></td>
+            <td>${p.sameDrawer ? `<span class="badge badge-err">same drawer</span>` : p.sameAgent ? `<span class="badge badge-warn">same agent</span>` : `<span class="badge badge-info">across agents</span>`}</td>
+            <td>${verdict(p)}</td></tr>`)
+          .join("")}</tbody></table>`
+        : `<p class="muted">No pairs above the threshold. Lower it to look harder.</p>`;
+      $$("[data-goto]", el).forEach((a) => (a.onclick = () => { m.close(); openSkill(a.dataset.goto); }));
+      $$("[data-check]", el).forEach((a) => (a.onclick = () => checkOne(...a.dataset.check.split("|"))));
+      $$("[data-open]", el).forEach((a) => (a.onclick = () => { const [x, y] = a.dataset.open.split("|"); m.close(); runComparison(x, y); }));
+    };
+    const checkOne = async (aId, bId) => {
+      if (aiNotReady()) return aiSettingsDialog();
+      const k = [aId, bId].sort().join("|");
+      state.comparisons[k] = "loading";
+      render(m.el);
+      try { state.comparisons[k] = await api("/api/ai/compare", { method: "POST", body: { a: aId, b: bId } }); }
+      catch (err) { delete state.comparisons[k]; toast(err.message, { kind: "err" }); }
+      render(m.el);
+    };
+    const m = modal({
+      title: `Overlap check — ${scope}`,
+      wide: true,
+      body: `<div class="panel-tools">
+          <label>Threshold <input type="range" id="o-th" min="0.15" max="0.9" step="0.05" value="${threshold}" /> <span id="o-thv">${Math.round(threshold * 100)}%</span></label>
+          <span class="muted" id="o-summary"></span>
+          <span class="spacer"></span>
+          <button class="btn btn-sm btn-primary" id="o-ai">Check top 10 with AI</button>
+          <div class="progress" id="o-prog" hidden><i style="width:0"></i></div>
+        </div>
+        <p class="muted" style="margin:0 0 10px;font-size:12.5px">Static overlap weighs the descriptions most (that is what the agent chooses on), then bodies, then names. Same drawer = the tool will pick one unpredictably; same agent = both may be loaded; across agents = duplication to reconcile.</p>
+        <div id="o-table"></div>`,
+    });
+    render(m.el);
+    $("#o-th", m.el).oninput = async (e) => {
+      threshold = Number(e.target.value);
+      $("#o-thv", m.el).textContent = `${Math.round(threshold * 100)}%`;
+      try { data = await fetchPairs(); render(m.el); } catch (err) { toast(err.message, { kind: "err" }); }
+    };
+    $("#o-ai", m.el).onclick = async () => {
+      if (aiNotReady()) return aiSettingsDialog();
+      const todo = data.pairs.filter((p) => !p.identical && !state.comparisons[key(p)]).slice(0, 10);
+      if (!todo.length) return toast("Nothing left to check", { timeout: 2000 });
+      const prog = $("#o-prog", m.el);
+      prog.hidden = false;
+      let done = 0;
+      const worker = async () => {
+        while (todo.length) {
+          const p = todo.shift();
+          await checkOne(p.a.id, p.b.id);
+          done += 1;
+          $("i", prog).style.width = `${Math.round((done / 10) * 100)}%`;
+        }
+      };
+      await Promise.all([worker(), worker()]);
+      prog.hidden = true;
+    };
   }
 
   /* ---------- Dialogs ---------- */
@@ -1206,6 +1406,8 @@
   $("#bulk-archive").onclick = () => archiveSkills([...state.marked]);
   $("#btn-archive").onclick = archiveDialog;
   $("#btn-ai").onclick = aiSettingsDialog;
+  $("#btn-quality").onclick = qualityPanel;
+  $("#btn-overlap").onclick = overlapPanel;
   $("#bulk-compare").onclick = () => { const [a, b] = [...state.marked]; runComparison(a, b); };
   $("#bulk-export").onclick = () => exportDialog([...state.marked]);
   $("#bulk-clear").onclick = () => { state.marked.clear(); renderList(); };

@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
-import { scanSkills, toCatalogSkill, copySkill } from "./scan.js";
+import { scanSkills, toCatalogSkill, copySkill, agentPresence } from "./scan.js";
+import { overlapPairs } from "./overlap.js";
 import { exportManifest, importManifest, parseManifest } from "./manifest.js";
 import { installSkills } from "./install.js";
 import { listStore, restore, purge, purgeAll, stash } from "./store.js";
@@ -27,7 +28,10 @@ Usage
   skill-drawer archive list              what is on the shelf
   skill-drawer copy <name|path> --drawer <path> [--overwrite]
   skill-drawer move <name|path> --drawer <path> [--overwrite]
-  skill-drawer agents                    skills grouped by agent
+  skill-drawer agents                    installed agents and their skills
+  skill-drawer quality [--json]          static quality score for every skill
+  skill-drawer overlap [--threshold 0.35] [--json]
+                                         pairs of skills likely to trigger on the same request
   skill-drawer trash [list|restore <entry>|empty|purge <entry>]
   skill-drawer ai [show|set <key>=<value>…|test|presets|clear-cache]
                                          configure the model used for assess/compare
@@ -73,6 +77,7 @@ function parseArgs(argv) {
     else if (a === "--overwrite") flags.overwrite = true;
     else if (a === "--fetch") flags.fetch = true;
     else if (a === "--force") flags.force = true;
+    else if (a === "--threshold") flags.threshold = Number(next());
     else if (a === "--quiet" || a === "-q") flags.quiet = true;
     else if (a === "-h" || a === "--help") flags.help = true;
     else if (a === "-v" || a === "--version") flags.version = true;
@@ -164,16 +169,45 @@ export async function runCli(argv) {
     }
     case "agents": {
       const index = scanSkills(scanOpts(flags));
+      const presence = agentPresence();
       const groups = new Map();
-      for (const s of index.skills) {
-        if (!groups.has(s.agentId)) groups.set(s.agentId, { id: s.agentId, label: s.agentLabel, skills: [] });
-        groups.get(s.agentId).skills.push(s);
+      for (const d of index.drawers) {
+        if (!groups.has(d.agentId)) {
+          const p = presence.find((x) => x.id === d.agentId);
+          groups.set(d.agentId, { id: d.agentId, label: d.agentLabel, installed: Boolean(p?.installed), via: p?.via || [], drawers: [], skills: [] });
+        }
+        groups.get(d.agentId).drawers.push({ label: d.label, root: d.root, exists: d.exists !== false, writable: d.writable, kind: d.kind });
       }
+      for (const s of index.skills) groups.get(s.agentId)?.skills.push(s);
       if (flags.json) return out([...groups.values()].map((g) => ({ ...g, skills: g.skills.map(toCatalogSkill) })));
       for (const g of groups.values()) {
-        console.log(`${g.label} (${g.skills.length})`);
-        for (const s of g.skills) console.log(`  ${s.disabled ? "[disabled] " : ""}${s.name.padEnd(28)} ${s.drawerLabel}`);
+        const n = g.skills.length;
+        console.log(`${g.label} — ${n} skill${n === 1 ? "" : "s"}${g.installed ? `, installed (${g.via.join(", ")})` : ", not detected; skills folder present"}`);
+        for (const d of g.drawers) {
+          const mine = g.skills.filter((s) => s.drawerLabel === d.label);
+          console.log(`  ${d.label}${d.exists ? "" : "  (not created yet)"}${d.writable ? "" : "  (tool-managed)"}`);
+          for (const s of mine) console.log(`    Q${String(s.quality.score).padStart(3)} ${s.quality.grade}  ${s.disabled ? "[disabled] " : ""}${s.name}`);
+        }
       }
+      return;
+    }
+    case "quality": {
+      const index = scanSkills(scanOpts(flags));
+      const rows = index.skills.slice().sort((a, b) => a.quality.score - b.quality.score);
+      if (flags.json) return out(rows.map((s) => ({ id: s.id, name: s.name, path: s.path, agent: s.agentLabel, quality: s.quality })));
+      console.log(table(rows.map((s) => [String(s.quality.score), s.quality.grade, s.name, s.agentLabel, s.quality.parts.filter((p) => p.points < p.max).map((p) => `${p.label.toLowerCase()}: ${p.note}`).join("; ").slice(0, 90)]), ["score", "grade", "name", "agent", "what to fix"]));
+      return;
+    }
+    case "overlap": {
+      const index = scanSkills(scanOpts(flags));
+      const r = overlapPairs(index.skills, { threshold: flags.threshold ?? 0.35 });
+      if (flags.json) return out(r);
+      if (!r.pairs.length) console.log(`No pairs above ${(flags.threshold ?? 0.35) * 100}% overlap across ${r.considered} skills.`);
+      for (const p of r.pairs) {
+        console.log(`${String(Math.round(p.score * 100)).padStart(3)}%  ${p.level.padEnd(9)} ${p.a.name} (${p.a.agentLabel})  ⟷  ${p.b.name} (${p.b.agentLabel})${p.sameAgent ? "  [same agent]" : ""}`);
+        console.log(`       name ${Math.round(p.name * 100)}%  description ${Math.round(p.description * 100)}%  body ${Math.round(p.body * 100)}%`);
+      }
+      console.log(`\n${r.total} pair${r.total === 1 ? "" : "s"} above threshold; run "skill-drawer compare <a> <b>" for the AI verdict on one.`);
       return;
     }
     case "archive": {

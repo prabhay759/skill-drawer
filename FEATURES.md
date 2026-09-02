@@ -52,6 +52,17 @@ Skill Drawer started from a review of [skill-cabinet](https://github.com/subsy/s
 |---|---|
 | **Compare two skills and assess quality with a chat-completions API the user configures** | `src/ai.js`: a raw-HTTP client with two wire formats, OpenAI chat completions (`POST {baseUrl}/chat/completions`, Bearer key, `response_format: json_object` with automatic fallback) and Anthropic Messages (`POST {baseUrl}/v1/messages`, `x-api-key`). Settings in `~/.skill-drawer/ai.json` with env overrides and presets. Two prompts with strict JSON schemas: assessment (score, grade, five dimensions, strengths, weaknesses, suggestions, improved description) and comparison (overlap, same job, per-skill quality, keep/merge recommendation, merge plan, trigger fix). Results cached by model and content hash. UI: AI ⚙ settings with Test, Assess (AI) button and AI tab with Apply-description, Compare with… picker, Compare (AI) for two marked skills, Compare on two-skill conflicts in Issues. CLI: `ai`, `assess`, `compare`. |
 
+## Added in 0.4.0
+
+| Request | What was built |
+|---|---|
+| **Support Copilot** | `src/agents.js` knows GitHub Copilot's user drawer (`~/.copilot/skills`), project drawer (`.github/skills`) and three detection signals (`~/.copilot`, the `copilot` CLI, the `github.copilot` VS Code extension). |
+| **Only show agents available locally** | `detectAgents` checks home folders, PATH binaries and app folders. The sidebar lists an agent only when it is installed or already holds skills; installed agents without a skills folder get a placeholder drawer (`exists: false`) that is created on first write. Hover shows the evidence. |
+| **Open and close the drawer** | Agent groups collapse and expand with a chevron; the closed set is persisted in localStorage. "Create & open folder" on a placeholder drawer creates it and opens it in the file manager. |
+| **Skill quality check, deep** | `src/quality.js`: a 0–100 static score with five explained parts; `qualityScore`/`qualityGrade` on every catalog entry; `Q` chip and sort; `GET /api/quality`; Quality panel with the top deductions per skill and batch AI assessment (two workers, progress bar); `skill-drawer quality`. |
+| **Skill overlap check, deep** | `src/overlap.js`: description-weighted pairwise overlap with name and body components, identical-copy detection, same drawer / same agent / across agents tags; `GET /api/overlap` with threshold, agent scope and id filter; Overlap panel with threshold slider, per-pair AI verdict, top-10 AI batch; `skill-drawer overlap`. |
+| **Comparison, deep** | Comparison view combines the AI verdict with static overlap and quality, a colour line diff of both SKILL.md files (`src/diff.js`, `GET /api/skills/:id/diff`), and quick actions: copy A's description to B or B's to A, and trash the skill the model recommends dropping. |
+
 ## Out of scope, on purpose
 
 - **Multi-user or remote access.** The server binds to 127.0.0.1 and has no auth; putting it on a network would need both.

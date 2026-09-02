@@ -16,10 +16,12 @@ test("discovers user, plugin and project drawers", (t) => {
   fs.mkdirSync(sub, { recursive: true });
 
   const drawers = discoverDrawers({ home: env.home, cwd: sub });
-  const kinds = Object.fromEntries(drawers.map((d) => [d.kind, (d.root)]));
-  assert.ok(kinds.user.endsWith(".claude/skills"));
-  assert.ok(kinds.plugin.endsWith(".cursor/plugins"));
-  assert.ok(kinds.project.endsWith("proj/.claude/skills"));
+  const roots = (kind) => drawers.filter((d) => d.kind === kind).map((d) => d.root);
+  assert.ok(roots("user").some((r) => r.endsWith(".claude/skills")));
+  assert.ok(roots("plugin").some((r) => r.endsWith(".cursor/plugins")));
+  assert.ok(roots("project").some((r) => r.endsWith("proj/.claude/skills")));
+  // ~/.cursor exists, so Cursor is "installed" and gets a placeholder user drawer.
+  assert.equal(drawers.find((d) => d.root.endsWith(".cursor/skills"))?.exists, false);
   assert.equal(drawers.find((d) => d.kind === "plugin").writable, false);
 
   const index = scanSkills({ home: env.home, cwd: sub });

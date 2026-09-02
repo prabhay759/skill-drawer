@@ -1,6 +1,6 @@
 {
   "name": "skill-drawer",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Browse, lint, organise, trash-and-restore, disable, edit, export and install agent skills across every drawer on your machine (.agents, .claude, .codex, .cursor, .gemini, project-local and more).",
   "type": "module",
   "bin": {
@@ -37,19 +37,21 @@
     "url": "https://github.com/prabhay759/skill-drawer/issues"
   },
   "keywords": [
-    "skills",
     "agent-skills",
+    "agents",
+    "anthropic",
     "claude",
     "claude-code",
-    "cursor",
     "codex",
+    "copilot",
+    "cursor",
     "gemini",
-    "agents",
-    "skill-manager",
-    "npx",
+    "github-copilot",
     "llm",
+    "npx",
     "openai",
-    "anthropic"
+    "skill-manager",
+    "skills"
   ],
   "author": "Prabhay Gupta",
   "license": "MIT",

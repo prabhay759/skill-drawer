@@ -7,7 +7,8 @@ import { auditSkill } from "./audit.js";
 import { lintSkill } from "./lint.js";
 import { detectConflicts } from "./conflicts.js";
 import { listStore } from "./store.js";
-import { agentForFolder, agentForPath } from "./agents.js";
+import { agentForFolder, agentForPath, detectAgents } from "./agents.js";
+import { qualityScore } from "./quality.js";
 
 const SKIP_HOME_DOTDIRS = new Set([
   ".cache", ".local", ".npm", ".nvm", ".rustup", ".cargo", ".docker", ".mozilla",
@@ -61,7 +62,7 @@ export function discoverDrawers({ cwd = process.cwd(), extraRoots = [], project 
     if (seen.has(resolved)) return;
     seen.add(resolved);
     const a = agent || agentForPath(root);
-    drawers.push({ id, label, root: resolved, kind, scope, recursive, writable, agentId: a.id, agentLabel: a.label });
+    drawers.push({ id, label, root: resolved, kind, scope, recursive, writable, exists: true, agentId: a.id, agentLabel: a.label });
   };
 
   let homeEntries = [];
@@ -113,7 +114,24 @@ export function discoverDrawers({ cwd = process.cwd(), extraRoots = [], project 
   for (const extra of extraRoots) {
     add(`extra:${extra}`, extra, extra, "extra", "project");
   }
+
+  // Installed agents without a skills folder yet get a placeholder drawer, so
+  // skills can be copied, installed or created there (the folder is made on
+  // first write). Agents that are neither installed nor holding skills are hidden.
+  const detected = detectAgents({ home });
+  for (const a of detected) {
+    if (!a.installed || !a.userSkills) continue;
+    const resolved = path.resolve(a.userSkills);
+    if (seen.has(resolved)) continue;
+    seen.add(resolved);
+    const rel = path.relative(home, resolved).replace(/\\/g, "/");
+    drawers.push({ id: a.id, label: `~/${rel}`, root: resolved, kind: "user", scope: "user", recursive: false, writable: true, exists: false, agentId: a.id, agentLabel: a.label });
+  }
   return drawers;
+}
+
+export function agentPresence(home = HOME) {
+  return detectAgents({ home });
 }
 
 function collectDirectSkills(drawer, list, rootOverride) {
@@ -242,7 +260,10 @@ function summarize(item) {
   } catch {
     dirStat = st;
   }
+  const quality = qualityScore({ frontmatter: data, present: fm.present, error: fm.error, body: fm.content, lintProblems: lint.problems, risk: audited.severity, slug, files, fileOnly: Boolean(item.file) });
   return {
+    quality,
+    bodyPreview: fm.content.slice(0, 20000),
     id: idFor(dir),
     name,
     slug,
@@ -383,6 +404,8 @@ export function toCatalogSkill(s) {
     risk: s.risk,
     lint: s.lint,
     lintCount: s.lintProblems.length,
+    qualityScore: s.quality?.score ?? null,
+    qualityGrade: s.quality?.grade ?? null,
     copyCount: s.copies.length,
     mtime: s.mtime,
     ctime: s.ctime,

@@ -244,3 +244,27 @@ pre { background: var(--bg-3); padding: 10px 12px; border-radius: var(--radius);
 .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; vertical-align: middle; margin-right: 6px; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .notice { padding: 10px 12px; border: 1px dashed var(--line); border-radius: var(--radius); color: var(--fg-2); }
+
+.agent-item .chev { display: inline-block; width: 14px; color: var(--fg-3); font-size: 11px; transition: transform .12s; }
+.agent-item.closed .chev { transform: rotate(-90deg); }
+.agent-item .lbl { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.agent-item .inst { font-size: 9px; color: var(--fg-3); border: 1px solid var(--line); border-radius: 3px; padding: 0 3px; text-transform: uppercase; }
+.drawer-item.ghost .label { color: var(--fg-3); font-style: italic; }
+.qchip { display: inline-block; font-size: 11px; padding: 0 5px; border-radius: 3px; border: 1px solid var(--line); font-family: var(--mono); }
+.q-A, .q-B { color: var(--ok); } .q-C { color: var(--warn); } .q-D, .q-F { color: var(--err); }
+table.grid { border-collapse: collapse; width: 100%; font-size: 13px; }
+table.grid th, table.grid td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+table.grid th { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--fg-3); font-weight: 600; }
+table.grid tr:hover td { background: var(--bg-hover); }
+table.grid a { cursor: pointer; }
+.sbar { display: inline-block; width: 70px; height: 8px; background: var(--bg-3); border-radius: 4px; overflow: hidden; vertical-align: middle; margin-right: 6px; }
+.sbar i { display: block; height: 100%; background: var(--accent); }
+.sbar.warn i { background: var(--warn); } .sbar.err i { background: var(--err); } .sbar.ok i { background: var(--ok); }
+.diff { font-family: var(--mono); font-size: 12px; background: var(--bg-2); border: 1px solid var(--line); border-radius: var(--radius); max-height: 50vh; overflow: auto; }
+.diff div { padding: 0 8px; white-space: pre-wrap; word-break: break-word; }
+.diff .add { background: color-mix(in srgb, var(--ok) 18%, transparent); }
+.diff .del { background: color-mix(in srgb, var(--err) 18%, transparent); }
+.diff .eq { color: var(--fg-2); }
+.panel-tools { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+.progress { height: 6px; background: var(--bg-3); border-radius: 3px; overflow: hidden; flex: 1; min-width: 120px; }
+.progress i { display: block; height: 100%; background: var(--accent); transition: width .2s; }

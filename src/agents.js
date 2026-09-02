@@ -1,39 +1,58 @@
 /**
- * Map a drawer folder to the agent that reads it. Dot-folder names are the
- * convention every tool follows (~/.claude, .cursor, …); unknown ones fall
- * back to a capitalised folder name so nothing is left unclassified.
+ * Agents: which tools read skills, where they keep them, and how to tell
+ * whether a tool is installed on this machine.
+ *
+ * Detection signals per agent: a home dot-folder, a binary on PATH, or an
+ * application folder. An agent is "installed" when any signal matches.
  */
-const AGENTS = {
-  claude: { id: "claude", label: "Claude Code" },
-  cursor: { id: "cursor", label: "Cursor" },
-  codex: { id: "codex", label: "Codex" },
-  gemini: { id: "gemini", label: "Gemini" },
-  agents: { id: "agents", label: "Agents (shared)" },
-  github: { id: "copilot", label: "GitHub Copilot" },
-  copilot: { id: "copilot", label: "GitHub Copilot" },
-  windsurf: { id: "windsurf", label: "Windsurf" },
-  kiro: { id: "kiro", label: "Kiro" },
-  opencode: { id: "opencode", label: "OpenCode" },
-  amp: { id: "amp", label: "Amp" },
-  continue: { id: "continue", label: "Continue" },
-  cline: { id: "cline", label: "Cline" },
-  roo: { id: "roo", label: "Roo Code" },
-  aider: { id: "aider", label: "Aider" },
-  goose: { id: "goose", label: "Goose" },
-  zed: { id: "zed", label: "Zed" },
-  junie: { id: "junie", label: "Junie" },
-  trae: { id: "trae", label: "Trae" },
-  qwen: { id: "qwen", label: "Qwen Code" },
-  augment: { id: "augment", label: "Augment" },
-  vscode: { id: "vscode", label: "VS Code" },
-  skills: { id: "project", label: "Project (bare skills/)" },
-};
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
+const AGENTS = [
+  { id: "claude", label: "Claude Code", folders: [".claude"], bins: ["claude"], userSkills: ".claude/skills", projectSkills: [".claude/skills"] },
+  { id: "copilot", label: "GitHub Copilot", folders: [".copilot"], bins: ["copilot", "github-copilot-cli"], apps: [".vscode/extensions"], appMatch: /github\.copilot/i, userSkills: ".copilot/skills", projectSkills: [".github/skills"] },
+  { id: "cursor", label: "Cursor", folders: [".cursor"], bins: ["cursor"], userSkills: ".cursor/skills", projectSkills: [".cursor/skills"] },
+  { id: "codex", label: "Codex", folders: [".codex"], bins: ["codex"], userSkills: ".codex/skills", projectSkills: [".codex/skills"] },
+  { id: "gemini", label: "Gemini", folders: [".gemini"], bins: ["gemini"], userSkills: ".gemini/skills", projectSkills: [".gemini/skills"] },
+  { id: "agents", label: "Agents (shared)", folders: [".agents"], bins: [], userSkills: ".agents/skills", projectSkills: [".agents/skills"] },
+  { id: "windsurf", label: "Windsurf", folders: [".windsurf", ".codeium"], bins: ["windsurf"], userSkills: ".windsurf/skills", projectSkills: [".windsurf/skills"] },
+  { id: "kiro", label: "Kiro", folders: [".kiro"], bins: ["kiro"], userSkills: ".kiro/skills", projectSkills: [".kiro/skills"] },
+  { id: "opencode", label: "OpenCode", folders: [".opencode", ".config/opencode"], bins: ["opencode"], userSkills: ".opencode/skills", projectSkills: [".opencode/skills"] },
+  { id: "amp", label: "Amp", folders: [".amp", ".config/amp"], bins: ["amp"], userSkills: ".amp/skills", projectSkills: [".amp/skills"] },
+  { id: "continue", label: "Continue", folders: [".continue"], bins: ["cn"], userSkills: ".continue/skills", projectSkills: [".continue/skills"] },
+  { id: "cline", label: "Cline", folders: [".cline"], bins: ["cline"], userSkills: ".cline/skills", projectSkills: [".cline/skills"] },
+  { id: "roo", label: "Roo Code", folders: [".roo"], bins: [], userSkills: ".roo/skills", projectSkills: [".roo/skills"] },
+  { id: "aider", label: "Aider", folders: [".aider"], bins: ["aider"], userSkills: ".aider/skills", projectSkills: [] },
+  { id: "goose", label: "Goose", folders: [".config/goose"], bins: ["goose"], userSkills: ".goose/skills", projectSkills: [] },
+  { id: "zed", label: "Zed", folders: [".config/zed"], bins: ["zed"], userSkills: ".zed/skills", projectSkills: [] },
+  { id: "junie", label: "Junie", folders: [".junie"], bins: [], userSkills: ".junie/skills", projectSkills: [".junie/skills"] },
+  { id: "trae", label: "Trae", folders: [".trae"], bins: ["trae"], userSkills: ".trae/skills", projectSkills: [".trae/skills"] },
+  { id: "qwen", label: "Qwen Code", folders: [".qwen"], bins: ["qwen"], userSkills: ".qwen/skills", projectSkills: [".qwen/skills"] },
+  { id: "augment", label: "Augment", folders: [".augment"], bins: ["auggie"], userSkills: ".augment/skills", projectSkills: [".augment/skills"] },
+  { id: "vscode", label: "VS Code", folders: [], bins: ["code"], userSkills: "", projectSkills: [] },
+];
+
+const FOLDER_TO_AGENT = new Map();
+for (const a of AGENTS) {
+  for (const f of a.folders) FOLDER_TO_AGENT.set(f.split("/").pop(), a);
+  if (a.userSkills) FOLDER_TO_AGENT.set(a.userSkills.split("/")[0], a);
+  for (const p of a.projectSkills) FOLDER_TO_AGENT.set(p.split("/")[0], a);
+}
+FOLDER_TO_AGENT.set(".github", AGENTS.find((a) => a.id === "copilot"));
+FOLDER_TO_AGENT.set(".vscode", AGENTS.find((a) => a.id === "vscode"));
+
+const pick = (a) => ({ id: a.id, label: a.label });
 
 export function agentForFolder(folderName) {
-  const key = String(folderName || "").replace(/^\./, "").toLowerCase();
-  if (AGENTS[key]) return AGENTS[key];
-  if (!key) return { id: "other", label: "Other" };
-  return { id: key, label: key.charAt(0).toUpperCase() + key.slice(1) };
+  const raw = String(folderName || "");
+  const key = raw.startsWith(".") ? raw : `.${raw}`;
+  const hit = FOLDER_TO_AGENT.get(key.toLowerCase()) || FOLDER_TO_AGENT.get(key);
+  if (hit) return pick(hit);
+  const bare = key.slice(1).toLowerCase();
+  if (bare === "skills") return { id: "project", label: "Project (bare skills/)" };
+  if (!bare) return { id: "other", label: "Other" };
+  return { id: bare, label: bare.charAt(0).toUpperCase() + bare.slice(1) };
 }
 
 /** Agent for an arbitrary drawer root path: first dot-folder segment wins. */
@@ -42,8 +61,71 @@ export function agentForPath(root) {
   for (let i = parts.length - 1; i >= 0; i -= 1) {
     if (parts[i].startsWith(".") && parts[i].length > 1) return agentForFolder(parts[i]);
   }
-  if (parts[parts.length - 1] === "skills") return AGENTS.skills;
+  if (parts[parts.length - 1] === "skills") return { id: "project", label: "Project (bare skills/)" };
   return { id: "other", label: "Other" };
+}
+
+function onPath(bin, envPath) {
+  const exts = process.platform === "win32" ? ["", ".exe", ".cmd", ".bat"] : [""];
+  for (const dir of String(envPath || "").split(path.delimiter)) {
+    if (!dir) continue;
+    for (const ext of exts) {
+      try {
+        const p = path.join(dir, bin + ext);
+        if (fs.statSync(p).isFile()) return p;
+      } catch {
+        /* next */
+      }
+    }
+  }
+  return null;
+}
+
+function appMatch(home, a) {
+  if (!a.apps) return null;
+  for (const rel of a.apps) {
+    const dir = path.join(home, rel);
+    try {
+      const entries = fs.readdirSync(dir);
+      const hit = entries.find((e) => a.appMatch.test(e));
+      if (hit) return path.join(dir, hit);
+    } catch {
+      /* missing */
+    }
+  }
+  return null;
+}
+
+/**
+ * Which agents are present on this machine, with the evidence.
+ * @returns {Array<{id,label,installed:boolean,via:string[],userSkills:string|null,projectSkills:string[]}>}
+ */
+export function detectAgents({ home = os.homedir(), envPath = process.env.PATH } = {}) {
+  return AGENTS.map((a) => {
+    const via = [];
+    for (const f of a.folders) {
+      const p = path.join(home, f);
+      try {
+        if (fs.statSync(p).isDirectory()) via.push(`~/${f}`);
+      } catch {
+        /* missing */
+      }
+    }
+    for (const b of a.bins) {
+      const p = onPath(b, envPath);
+      if (p) via.push(`${b} on PATH`);
+    }
+    const app = appMatch(home, a);
+    if (app) via.push(path.relative(home, app).replace(/\\/g, "/"));
+    return {
+      id: a.id,
+      label: a.label,
+      installed: via.length > 0,
+      via,
+      userSkills: a.userSkills ? path.join(home, a.userSkills) : null,
+      projectSkills: a.projectSkills,
+    };
+  });
 }
 
 export const KNOWN_AGENTS = AGENTS;

@@ -14,7 +14,10 @@ import {
   toCatalogSkill,
   findSkillFile,
   copySkill,
+  agentPresence,
 } from "./scan.js";
+import { overlapPairs } from "./overlap.js";
+import { diffLines } from "./diff.js";
 import { listStore, stash, restore, purge, purgeAll, storeRoot } from "./store.js";
 import { exportManifest, importManifest, parseManifest } from "./manifest.js";
 import { installSkills } from "./install.js";
@@ -127,18 +130,20 @@ export function createApp(options = {}) {
         if (d) d.count += 1;
       }
       const visibleDrawers = drawers.filter((d) => d.count > 0 || d.writable);
+      const presence = new Map(agentPresence(opts.home || HOME).map((a) => [a.id, a]));
       const agents = [];
       const agentById = new Map();
       for (const d of visibleDrawers) {
         if (!agentById.has(d.agentId)) {
-          agentById.set(d.agentId, { id: d.agentId, label: d.agentLabel, count: 0, drawers: [] });
+          const p = presence.get(d.agentId);
+          agentById.set(d.agentId, { id: d.agentId, label: d.agentLabel, count: 0, drawers: [], installed: Boolean(p?.installed), via: p?.via || [] });
           agents.push(agentById.get(d.agentId));
         }
         const a = agentById.get(d.agentId);
         a.count += d.count;
         a.drawers.push(d.id);
       }
-      agents.sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+      agents.sort((a, b) => b.count - a.count || Number(b.installed) - Number(a.installed) || a.label.localeCompare(b.label));
       return {
         home: HOME,
         cwd: opts.cwd,
@@ -229,7 +234,9 @@ export function createApp(options = {}) {
     if (!editor) throw httpError(400, "Set SKILL_DRAWER_EDITOR, VISUAL or EDITOR to open skills in an editor");
     const [cmd, ...args] = editor.split(/\s+/);
     try {
-      spawn(cmd, [...args, skill.path], { stdio: "ignore", detached: true, shell: false }).unref();
+      const child = spawn(cmd, [...args, skill.path], { stdio: "ignore", detached: true, shell: false });
+      child.on("error", () => {});
+      child.unref();
     } catch (err) {
       throw httpError(500, `Could not launch ${editor}: ${err.message}`);
     }
@@ -525,6 +532,49 @@ export function createApp(options = {}) {
   }));
 
   app.get("/api/drawers", wrap(() => getIndex().drawers));
+  app.get("/api/agents", wrap(() => agentPresence(opts.home || HOME)));
+
+  app.post("/api/drawers/open", wrap((req) => {
+    const index = getIndex();
+    const d = index.drawers.find((x) => x.id === req.body?.id);
+    if (!d) throw httpError(404, "Unknown drawer");
+    if (!d.exists) fs.mkdirSync(d.root, { recursive: true });
+    const platform = process.platform;
+    const cmd = platform === "darwin" ? "open" : platform === "win32" ? "explorer" : "xdg-open";
+    try {
+      const child = spawn(cmd, [d.root], { stdio: "ignore", detached: true });
+      child.on("error", () => {});
+      child.unref();
+    } catch (err) {
+      throw httpError(500, `Could not open ${d.root}: ${err.message}`);
+    }
+    invalidate();
+    return { opened: d.root };
+  }));
+
+  app.get("/api/overlap", wrap((req) => {
+    const index = getIndex();
+    const threshold = req.query.threshold !== undefined ? Number(req.query.threshold) : 0.35;
+    const ids = String(req.query.ids || "").split(",").filter(Boolean);
+    return overlapPairs(index.skills, { threshold, limit: Number(req.query.limit) || 200, agentId: req.query.agent || null, ids: ids.length ? ids : null });
+  }));
+
+  app.get("/api/skills/:id/diff", wrap((req) => {
+    const a = findSkill(req.params.id).skill;
+    const b = findSkill(String(req.query.other || "")).skill;
+    const ta = fs.readFileSync(a.skillFile, "utf8");
+    const tb = fs.readFileSync(b.skillFile, "utf8");
+    return { a: { id: a.id, name: a.name, path: a.skillFile }, b: { id: b.id, name: b.name, path: b.skillFile }, ...diffLines(ta, tb) };
+  }));
+
+  app.get("/api/quality", wrap((req) => {
+    const index = getIndex();
+    const agent = req.query.agent || null;
+    return index.skills
+      .filter((s) => !agent || agent === "all" || s.agentId === agent)
+      .map((s) => ({ id: s.id, name: s.name, agentLabel: s.agentLabel, drawerLabel: s.drawerLabel, path: s.path, disabled: s.disabled, lint: s.lint, risk: s.risk, quality: s.quality }))
+      .sort((x, y) => x.quality.score - y.quality.score);
+  }));
 
   // Static UI + vendored browser libs (no build step).
   app.use("/vendor/marked", express.static(pkgRoot("marked")));
@@ -546,7 +596,9 @@ function openBrowser(url) {
   const cmd = platform === "darwin" ? "open" : platform === "win32" ? "cmd" : "xdg-open";
   const args = platform === "win32" ? ["/c", "start", "", url] : [url];
   try {
-    spawn(cmd, args, { stdio: "ignore", detached: true }).unref();
+    const child = spawn(cmd, args, { stdio: "ignore", detached: true });
+    child.on("error", () => {});
+    child.unref();
   } catch {
     /* no browser available */
   }

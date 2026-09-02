@@ -22,6 +22,8 @@
       <button id="btn-install" class="btn" title="Install from GitHub or a folder (i)">Install</button>
       <button id="btn-import" class="btn" title="Import a manifest or bundle">Import</button>
       <button id="btn-export" class="btn" title="Export manifest or bundle">Export</button>
+      <button id="btn-quality" class="btn" title="Quality check across skills">Quality</button>
+      <button id="btn-overlap" class="btn" title="Which skills trigger on the same requests">Overlap</button>
       <button id="btn-issues" class="btn" title="Duplicates, conflicts, lint, risk (!)">Issues <span id="issue-count" class="pill" hidden></span></button>
       <button id="btn-archive" class="btn" title="Archive shelf">Archive <span id="archive-count" class="pill" hidden></span></button>
       <button id="btn-trash" class="btn" title="Trash (t)">Trash <span id="trash-count" class="pill" hidden></span></button>
@@ -62,6 +64,7 @@
           <option value="size">Largest</option>
           <option value="risk">Riskiest</option>
           <option value="lint">Most lint problems</option>
+          <option value="quality">Lowest quality first</option>
         </select>
       </div>
       <div class="side-section census" id="census"></div>

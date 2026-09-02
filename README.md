@@ -17,6 +17,9 @@ Skill Drawer covers everything [skill-cabinet](https://github.com/subsy/skill-ca
 | Scan user-level drawers (`~/.*/skills`, Cursor builtin & plugins) | ✓ | ✓ |
 | Scan **project-local** drawers (walks up from your cwd) | | ✓ |
 | **Per-agent classification** (Claude Code, Cursor, Codex, Gemini, Copilot, …) with an agent tree | | ✓ |
+| **Detects installed agents** and shows only those (plus any folder holding skills) | | ✓ |
+| **Static quality score** on every skill, Quality panel, batch AI assessment | | ✓ |
+| **Overlap check** across skills with threshold and AI verdicts | | ✓ |
 | Extra roots on the command line (`--root`) | | ✓ |
 | Filter by drawer, search name/description/path/frontmatter | ✓ | ✓ |
 | Rendered body, raw source, frontmatter, extra files | ✓ | ✓ |
@@ -62,12 +65,26 @@ Requires Node 20+. `git` is needed only for installing skills from GitHub.
 
 Every agent reads its own folder, so a skill written for Claude Code is invisible to Cursor until it is copied there. Select a skill (or mark several), click **Copy to…** and pick the target drawer; the picker is grouped by agent. **Move to…** does the same but removes the original. Copies are real folders, never symlinks, so the target tool's updater cannot break them.
 
+### Which agents appear
+
+The sidebar lists an agent when it is installed on this machine (a home folder such as `~/.copilot` or `~/.claude`, a CLI such as `codex` on your PATH, or a VS Code extension such as GitHub Copilot) or when a skills folder for it already exists. Hover an agent name to see how it was detected. An installed agent with no skills folder yet shows an empty, italic drawer; copying, installing or creating a skill there makes the folder. Agents that are neither installed nor holding skills stay hidden. Click the chevron to close or open a group; the choice is remembered.
+
+Supported agents include Claude Code, GitHub Copilot (`~/.copilot/skills`, `.github/skills`), Cursor, Codex, Gemini, Windsurf, Kiro, OpenCode, Amp, Continue, Cline, Roo Code, Aider, Goose, Zed, Junie, Trae, Qwen Code, Augment and the shared `.agents` folder.
+
+### Quality check
+
+Every skill gets a static score out of 100 that needs no model: frontmatter validity (20), description as a trigger (30: length, says when to use it, has an action verb), instructions (25: length, headings, commands, steps, guardrails), safety (15, from the risk audit) and structure (10: broken links, reference files). The `Q` chip on each card shows it; sort by "Lowest quality first" to find the weak ones. The **Quality** button opens a table for the current agent scope with the two biggest deductions per skill and an **Assess all with AI** button that runs your configured model over each one with progress. `skill-drawer quality` prints the same table.
+
+### Overlap check
+
+The **Overlap** button scores every pair of skills in scope on how likely they are to be picked for the same request: descriptions weigh most, then bodies, then names. Identical copies score 100. Each pair is tagged same drawer (the tool will pick one unpredictably), same agent (both may load) or across agents (duplication). Drag the threshold, click **check with AI** on a pair for the model's verdict, or **Check top 10 with AI**. `skill-drawer overlap --threshold 0.3`.
+
 ### AI assessment and comparison
 
 Click **AI ⚙** in the top bar once and point Skill Drawer at a model. Presets fill in OpenAI, Anthropic (native Messages API or the OpenAI-compatible endpoint), OpenRouter, Groq, Ollama and LM Studio; or type any base URL that speaks OpenAI chat completions, a model id, and an API key. Test, then Save. The key is stored in `~/.skill-drawer/ai.json` readable only by you, or you can leave it out and set `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`, `GROQ_API_KEY`, or `SKILL_DRAWER_AI_API_KEY` in the environment instead. `SKILL_DRAWER_AI_BASE_URL`, `SKILL_DRAWER_AI_MODEL` and `SKILL_DRAWER_AI_PROVIDER` override the saved settings.
 
 - **Assess (AI)** on a skill opens the AI tab: a score out of 100 and a grade, five dimensions (trigger, clarity, completeness, structure, safety) with notes, strengths, weaknesses, specific suggestions, and a rewritten description with an Apply button.
-- **Compare with…** on a skill, **Compare (AI)** when exactly two skills are marked, or the Compare button on any two-skill conflict in Issues: overlap percentage, whether they do the same job, a quality score for each, a keep-A / keep-B / keep-both / merge recommendation with rationale, a merge plan, and a suggested rewrite so the agent can tell their triggers apart.
+- **Compare with…** on a skill, **Compare (AI)** when exactly two skills are marked, or the Compare button on any two-skill conflict in Issues: overlap percentage, whether they do the same job, a quality score for each, a keep-A / keep-B / keep-both / merge recommendation with rationale, a merge plan, and a suggested rewrite so the agent can tell their triggers apart. The same view shows the static overlap and quality numbers, a colour line diff of the two SKILL.md files, and quick actions to copy one description onto the other or trash the one the model recommends dropping.
 
 What is sent: the skill's frontmatter, body, file list and the static lint and risk findings, to the endpoint you configured and nowhere else. Results are cached by model and content hash, so re-opening is free; Re-assess bypasses the cache. Bodies over 60,000 characters are cut for the model and the result says so.
 
@@ -123,7 +140,9 @@ skill-drawer drawers                 the drawers that were found
 skill-drawer export [--bundle] [f]   manifest, or bundle with file contents
 skill-drawer import <file> [--drawer <dir>] [--overwrite] [--fetch]
 skill-drawer install <src> [names…] [--drawer <dir>] [--overwrite]
-skill-drawer agents                  skills grouped by agent
+skill-drawer agents                  installed agents, their drawers and skills
+skill-drawer quality [--json]        static quality score for every skill
+skill-drawer overlap [--threshold n] pairs likely to trigger on the same request
 skill-drawer disable <name|path>     quarantine a skill
 skill-drawer enable <name>           put it back
 skill-drawer archive <name|path>     shelve a skill outside every agent
