@@ -37,6 +37,15 @@ Skill Drawer started from a review of [skill-cabinet](https://github.com/subsy/s
 | **Localhost, no auth** | Still localhost-only by design. Cross-origin browser requests are rejected, markdown is sanitised with DOMPurify, and file reads and writes are confined to the skill folder. |
 | **No CLI** | `list`, `lint`, `issues`, `drawers`, `export`, `import`, `install`, `disable`, `enable`, `trash`, each with `--json` where it makes sense. |
 
+## Added in 0.2.0
+
+| Request | What was built |
+|---|---|
+| **Classify per agent** | `src/agents.js` maps every drawer folder to the agent that reads it. Drawers and skills carry `agentId` / `agentLabel`; the API returns an `agents` list; the sidebar is an agent tree with drawers nested; cards show an agent chip; default sort is by agent; `skill-drawer agents` in the CLI. |
+| **Archive and unarchive from the UI** | A third store next to trash and disabled: `~/.skill-drawer/archive`. Archive from the toolbar, selection bar or CLI. The Archive panel lists entries with agent, drawer, description and original path, and can unarchive to the original location, into any other agent's drawer, or delete. Undo toast after archiving. |
+| **Transport / copy skills across agents** | `copySkill` in `src/scan.js` copies or moves a folder, file or symlink (dereferenced) into another drawer, skipping `node_modules` and `.git`, with overwrite and rename. Copy to… / Move to… on a skill or a selection; drawer picker grouped by agent; keys `c` and `m`; CLI `copy` and `move`. |
+| **Edit skills** | Edit button in the toolbar. The Edit tab gained a metadata form (description and other frontmatter keys) backed by `PUT /api/skills/:id/frontmatter`, which rewrites the frontmatter block and leaves the body byte-for-byte; plus New file and Delete file (`DELETE /api/skills/:id/file`) next to the file editor. |
+
 ## Out of scope, on purpose
 
 - **Multi-user or remote access.** The server binds to 127.0.0.1 and has no auth; putting it on a network would need both.

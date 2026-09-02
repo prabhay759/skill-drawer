@@ -16,6 +16,7 @@ Skill Drawer covers everything [skill-cabinet](https://github.com/subsy/skill-ca
 |---|:---:|:---:|
 | Scan user-level drawers (`~/.*/skills`, Cursor builtin & plugins) | ✓ | ✓ |
 | Scan **project-local** drawers (walks up from your cwd) | | ✓ |
+| **Per-agent classification** (Claude Code, Cursor, Codex, Gemini, Copilot, …) with an agent tree | | ✓ |
 | Extra roots on the command line (`--root`) | | ✓ |
 | Filter by drawer, search name/description/path/frontmatter | ✓ | ✓ |
 | Rendered body, raw source, frontmatter, extra files | ✓ | ✓ |
@@ -24,9 +25,11 @@ Skill Drawer covers everything [skill-cabinet](https://github.com/subsy/skill-ca
 | Delete one or many | ✓ | ✓ |
 | **Trash with restore** (soft delete, undo toast, empty trash) | | ✓ |
 | **Disable / enable** (quarantine instead of delete) | | ✓ |
+| **Archive / unarchive** shelf, unarchive into any agent | | ✓ |
+| **Copy / move skills across agents** | | ✓ |
 | **Frontmatter & structure lint** (missing name/description, bad YAML, name mismatch, oversize, broken links) | | ✓ |
 | **Duplicate & trigger-conflict detection** (identical copies, same name, near-identical names, overlapping descriptions) | | ✓ |
-| **Edit in place** (any file in the skill, ⌘S to save) | | ✓ |
+| **Edit in place** (any file in the skill, metadata form, add/delete files) | | ✓ |
 | **Open in `$EDITOR`** | | ✓ |
 | **Create** and **rename** skills | | ✓ |
 | **Export / import** a manifest or a full bundle | | ✓ |
@@ -50,10 +53,20 @@ Requires Node 20+. `git` is needed only for installing skills from GitHub.
 
 ## The web UI
 
-- **Left**: drawers that were found (user, plugin, builtin, project), quick filters (lint problems, risk findings, duplicates, disabled), sort (drawer, name, recently modified, recently added, largest, riskiest, most lint).
+- **Left**: agents that were found, each with its drawers nested underneath (user, plugin, builtin, project). Click an agent to see everything it loads, or a drawer for just that folder. Quick filters (lint problems, risk findings, duplicates, disabled), sort (drawer, name, recently modified, recently added, largest, riskiest, most lint).
 - **Middle**: the skills, with badges for lint status, risk level, identical copies, symlinks, single-file skills, project scope and tool-managed drawers. Mark several to trash, disable or export them together.
-- **Right**: the selected skill. Tabs for the rendered body, raw source, frontmatter and signals (modified / added / size / hash / copies), files, health (lint problems + risk findings), and an editor.
-- **Top**: New, Install, Import, Export, Issues (all conflicts, lint and risk findings in one place), Trash, rescan, theme, help.
+- **Right**: the selected skill. Toolbar: Disable, Edit, Rename, Copy to…, Move to…, Archive, Open in editor, Export, Trash. Tabs for the rendered body, raw source, frontmatter and signals (modified / added / size / hash / copies), files, health (lint problems + risk findings), and Edit, which has a metadata form and a file editor with New file and Delete file.
+- **Top**: New, Install, Import, Export, Issues (all conflicts, lint and risk findings in one place), Archive, Trash, rescan, theme, help.
+
+### Moving skills between agents
+
+Every agent reads its own folder, so a skill written for Claude Code is invisible to Cursor until it is copied there. Select a skill (or mark several), click **Copy to…** and pick the target drawer; the picker is grouped by agent. **Move to…** does the same but removes the original. Copies are real folders, never symlinks, so the target tool's updater cannot break them.
+
+### Disable vs archive vs trash
+
+- **Disable** pauses a skill. It stays listed in grey under its agent and comes back with one click.
+- **Archive** shelves a skill you may want later but for no agent right now. It leaves the list and lives in the Archive panel, where you can unarchive it into its old drawer or any other agent's.
+- **Trash** is for deletion, with restore until you empty it.
 
 ### Keyboard
 
@@ -66,6 +79,7 @@ Requires Node 20+. `git` is needed only for installing skills from GitHub.
 | `a` | mark all visible |
 | `d` | trash marked (or current) |
 | `e` | disable / enable current |
+| `c` / `m` | copy / move to another agent |
 | `n` / `i` / `t` / `!` | new skill / install / trash / issues |
 | `1`–`6` | switch detail tab |
 | `r` | rescan |
@@ -92,8 +106,14 @@ skill-drawer drawers                 the drawers that were found
 skill-drawer export [--bundle] [f]   manifest, or bundle with file contents
 skill-drawer import <file> [--drawer <dir>] [--overwrite] [--fetch]
 skill-drawer install <src> [names…] [--drawer <dir>] [--overwrite]
+skill-drawer agents                  skills grouped by agent
 skill-drawer disable <name|path>     quarantine a skill
 skill-drawer enable <name>           put it back
+skill-drawer archive <name|path>     shelve a skill outside every agent
+skill-drawer archive list            what is shelved
+skill-drawer unarchive <entry> [--drawer <dir>]
+skill-drawer copy <name|path> --drawer <dir> [--overwrite]
+skill-drawer move <name|path> --drawer <dir> [--overwrite]
 skill-drawer trash [list|restore <entry>|purge <entry>|empty]
 ```
 

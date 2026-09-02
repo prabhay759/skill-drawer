@@ -23,6 +23,7 @@
       <button id="btn-import" class="btn" title="Import a manifest or bundle">Import</button>
       <button id="btn-export" class="btn" title="Export manifest or bundle">Export</button>
       <button id="btn-issues" class="btn" title="Duplicates, conflicts, lint, risk (!)">Issues <span id="issue-count" class="pill" hidden></span></button>
+      <button id="btn-archive" class="btn" title="Archive shelf">Archive <span id="archive-count" class="pill" hidden></span></button>
       <button id="btn-trash" class="btn" title="Trash (t)">Trash <span id="trash-count" class="pill" hidden></span></button>
       <button id="btn-refresh" class="btn btn-icon" title="Rescan (r)">↻</button>
       <select id="theme" class="select" title="Theme">
@@ -39,7 +40,7 @@
   <div class="layout">
     <aside class="sidebar">
       <div class="side-section">
-        <div class="side-heading">Drawers</div>
+        <div class="side-heading">Agents</div>
         <div id="drawers" class="drawer-list"></div>
       </div>
       <div class="side-section">
@@ -52,6 +53,7 @@
       <div class="side-section">
         <div class="side-heading">Sort</div>
         <select id="sort" class="select select-block">
+          <option value="agent">Agent, then name</option>
           <option value="drawer">Drawer, then name</option>
           <option value="name">Name</option>
           <option value="mtime">Recently modified</option>
@@ -69,7 +71,10 @@
         <label class="check"><input type="checkbox" id="select-all" /> <span id="list-summary">0 skills</span></label>
         <div id="bulk" class="bulk" hidden>
           <span id="bulk-count"></span>
+          <button class="btn btn-sm" id="bulk-copy" title="Copy to another agent">Copy to…</button>
+          <button class="btn btn-sm" id="bulk-move" title="Move to another agent">Move to…</button>
           <button class="btn btn-sm" id="bulk-disable">Disable</button>
+          <button class="btn btn-sm" id="bulk-archive">Archive</button>
           <button class="btn btn-sm" id="bulk-export">Export</button>
           <button class="btn btn-sm btn-danger" id="bulk-delete">Trash</button>
           <button class="btn btn-sm" id="bulk-clear">Clear</button>

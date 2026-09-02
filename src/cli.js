@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { scanSkills, toCatalogSkill } from "./scan.js";
+import { scanSkills, toCatalogSkill, copySkill } from "./scan.js";
 import { exportManifest, importManifest, parseManifest } from "./manifest.js";
 import { installSkills } from "./install.js";
 import { listStore, restore, purge, purgeAll, stash } from "./store.js";
@@ -20,6 +20,12 @@ Usage
                                          src: owner/repo, owner/repo/path, GitHub URL, local folder
   skill-drawer disable <name|path>       quarantine a skill (reversible)
   skill-drawer enable <name>             put a disabled skill back
+  skill-drawer archive <name|path>       shelve a skill outside every agent
+  skill-drawer unarchive <entry> [--drawer <path>]
+  skill-drawer archive list              what is on the shelf
+  skill-drawer copy <name|path> --drawer <path> [--overwrite]
+  skill-drawer move <name|path> --drawer <path> [--overwrite]
+  skill-drawer agents                    skills grouped by agent
   skill-drawer trash [list|restore <entry>|empty|purge <entry>]
   skill-drawer drawers                   show the drawers that were found
 
@@ -144,6 +150,60 @@ export async function runCli(argv) {
       );
       const c = index.census;
       console.log(`\n${c.total} skills (${c.disabled} disabled), ${c.unique} unique, ${c.conflicts} issues, ${c.trash} in trash`);
+      return;
+    }
+    case "agents": {
+      const index = scanSkills(scanOpts(flags));
+      const groups = new Map();
+      for (const s of index.skills) {
+        if (!groups.has(s.agentId)) groups.set(s.agentId, { id: s.agentId, label: s.agentLabel, skills: [] });
+        groups.get(s.agentId).skills.push(s);
+      }
+      if (flags.json) return out([...groups.values()].map((g) => ({ ...g, skills: g.skills.map(toCatalogSkill) })));
+      for (const g of groups.values()) {
+        console.log(`${g.label} (${g.skills.length})`);
+        for (const s of g.skills) console.log(`  ${s.disabled ? "[disabled] " : ""}${s.name.padEnd(28)} ${s.drawerLabel}`);
+      }
+      return;
+    }
+    case "archive": {
+      const sub = rest[0];
+      if (!sub || sub === "list") {
+        const entries = listStore("archive");
+        if (flags.json) return out(entries);
+        if (!entries.length) console.log(`Archive is empty (${path.join(drawerHome(), "archive")})`);
+        else console.log(table(entries.map((e) => [e.entryId, e.name, e.agentLabel || "", new Date(e.at).toISOString(), e.originalPath]), ["entry", "name", "agent", "archived", "original path"]));
+        return;
+      }
+      const index = scanSkills(scanOpts(flags));
+      const s = findByNameOrPath(index, sub);
+      if (!s) throw new Error(`No skill named ${sub}`);
+      const entry = stash("archive", s, { agentId: s.agentId, agentLabel: s.agentLabel, description: s.description });
+      console.log(`archived ${s.name} -> ${entry.payloadPath}`);
+      return;
+    }
+    case "unarchive": {
+      if (!rest[0]) throw new Error("unarchive needs an entry id (see: skill-drawer archive list)");
+      let target;
+      if (flags.drawer) {
+        const entry = listStore("archive").find((e) => e.entryId === rest[0]);
+        if (!entry) throw new Error("Entry not found");
+        target = path.join(flags.drawer, entry.type === "dir" ? path.basename(entry.originalPath) : entry.payload);
+      }
+      const r = restore("archive", rest[0], { target });
+      console.log(`unarchived ${r.name} -> ${r.restoredTo}`);
+      return;
+    }
+    case "copy":
+    case "move": {
+      if (!rest[0]) throw new Error(`${cmd} needs a skill name or path`);
+      if (!flags.drawer) throw new Error(`${cmd} needs --drawer <path>`);
+      const index = scanSkills(scanOpts(flags));
+      const s = findByNameOrPath(index, rest[0]);
+      if (!s) throw new Error(`No skill named ${rest[0]}`);
+      const drawer = index.drawers.find((d) => d.root === flags.drawer) || { root: flags.drawer, label: flags.drawer, writable: true };
+      const r = copySkill(s, drawer, { move: cmd === "move", overwrite: flags.overwrite });
+      console.log(`${cmd === "move" ? "moved" : "copied"} ${s.name} -> ${r.to}`);
       return;
     }
     case "drawers": {

@@ -55,3 +55,11 @@ export function setFrontmatterName(text, name) {
   if (!replaced) next.unshift(`name: ${name}`);
   return `---\n${next.join("\n")}\n---\n${fm.content}`;
 }
+
+/** Replace the whole frontmatter block, keeping the body untouched. */
+export function replaceFrontmatter(text, data) {
+  const fm = parseFrontmatter(text);
+  const body = fm.present ? fm.content : text;
+  const yaml = YAML.stringify(data).trimEnd();
+  return `---\n${yaml}\n---\n${body.startsWith("\n") || !body ? body : "\n" + body}`;
+}

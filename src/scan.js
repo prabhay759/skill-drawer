@@ -7,6 +7,7 @@ import { auditSkill } from "./audit.js";
 import { lintSkill } from "./lint.js";
 import { detectConflicts } from "./conflicts.js";
 import { listStore } from "./store.js";
+import { agentForFolder, agentForPath } from "./agents.js";
 
 const SKIP_HOME_DOTDIRS = new Set([
   ".cache", ".local", ".npm", ".nvm", ".rustup", ".cargo", ".docker", ".mozilla",
@@ -54,12 +55,13 @@ export function discoverDrawers({ cwd = process.cwd(), extraRoots = [], project 
   /** @type {Drawer[]} */
   const drawers = [];
   const seen = new Set();
-  const add = (id, label, root, kind, scope, recursive = false, writable = true) => {
+  const add = (id, label, root, kind, scope, recursive = false, writable = true, agent = null) => {
     if (!exists(root) || !isDir(root)) return;
     const resolved = real(root);
     if (seen.has(resolved)) return;
     seen.add(resolved);
-    drawers.push({ id, label, root: resolved, kind, scope, recursive, writable });
+    const a = agent || agentForPath(root);
+    drawers.push({ id, label, root: resolved, kind, scope, recursive, writable, agentId: a.id, agentLabel: a.label });
   };
 
   let homeEntries = [];
@@ -73,22 +75,24 @@ export function discoverDrawers({ cwd = process.cwd(), extraRoots = [], project 
     if (!entry.name.startsWith(".") || SKIP_HOME_DOTDIRS.has(entry.name)) continue;
     const base = path.join(home, entry.name);
     const id = entry.name.slice(1);
+    const agent = agentForFolder(entry.name);
     for (const folder of ["skills", "skill"]) {
-      add(id, `~/${entry.name}/${folder}`, path.join(base, folder), "user", "user");
+      add(id, `~/${entry.name}/${folder}`, path.join(base, folder), "user", "user", false, true, agent);
     }
     if (entry.name === ".cursor") {
-      add("cursor-builtin", "~/.cursor/skills-cursor", path.join(base, "skills-cursor"), "builtin", "user", false, false);
-      add("cursor-plugins", "~/.cursor/plugins", path.join(base, "plugins"), "plugin", "user", true, false);
+      add("cursor-builtin", "~/.cursor/skills-cursor", path.join(base, "skills-cursor"), "builtin", "user", false, false, agent);
+      add("cursor-plugins", "~/.cursor/plugins", path.join(base, "plugins"), "plugin", "user", true, false, agent);
     }
     if (entry.name === ".claude") {
-      add("claude-plugins", "~/.claude/plugins", path.join(base, "plugins"), "plugin", "user", true, false);
+      add("claude-plugins", "~/.claude/plugins", path.join(base, "plugins"), "plugin", "user", true, false, agent);
     }
     if (entry.name === ".codex") {
-      add("codex-plugins", "~/.codex/plugins", path.join(base, "plugins"), "plugin", "user", true, false);
+      add("codex-plugins", "~/.codex/plugins", path.join(base, "plugins"), "plugin", "user", true, false, agent);
     }
   }
-  add("gemini", "~/.gemini/antigravity/skills", path.join(home, ".gemini/antigravity/skills"), "user", "user");
-  add("gemini", "~/.gemini/antigravity/global_skills", path.join(home, ".gemini/antigravity/global_skills"), "user", "user");
+  const gemini = agentForFolder(".gemini");
+  add("gemini-antigravity", "~/.gemini/antigravity/skills", path.join(home, ".gemini/antigravity/skills"), "user", "user", false, true, gemini);
+  add("gemini-antigravity-global", "~/.gemini/antigravity/global_skills", path.join(home, ".gemini/antigravity/global_skills"), "user", "user", false, true, gemini);
 
   if (project && cwd) {
     // Walk up from cwd; every ancestor may hold project-local drawers.
@@ -98,7 +102,7 @@ export function discoverDrawers({ cwd = process.cwd(), extraRoots = [], project 
       for (const [rel, tool] of PROJECT_SKILL_DIRS) {
         const root = path.join(current, rel);
         const label = `${path.basename(current) || current}/${rel}`;
-        add(`project:${tool}:${current}`, label, root, "project", "project");
+        add(`project:${tool}:${current}`, label, root, "project", "project", false, true, agentForFolder(rel.split("/")[0]));
       }
       const parent = path.dirname(current);
       if (parent === current) break;
@@ -247,6 +251,8 @@ function summarize(item) {
     frontmatterError: fm.error,
     drawerId: drawer.id,
     drawerLabel: drawer.label,
+    agentId: drawer.agentId || "other",
+    agentLabel: drawer.agentLabel || "Other",
     kind: drawer.kind,
     scope: drawer.scope,
     writable: drawer.writable && !item.link,
@@ -280,7 +286,8 @@ function disabledSkills() {
     const install = describeInstall(payload);
     const skillMd = install.file ? payload : findSkillFile(payload);
     if (!skillMd) continue;
-    const drawer = { id: entry.drawerId, label: entry.drawerLabel, kind: "user", scope: "user", writable: true };
+    const agent = agentForPath(entry.originalPath);
+    const drawer = { id: entry.drawerId, label: entry.drawerLabel, kind: "user", scope: "user", writable: true, agentId: agent.id, agentLabel: agent.label };
     const summary = summarize({ dir: payload, skillMd, drawer, ...install, file: install.file });
     if (!summary) continue;
     summary.id = idFor(entry.originalPath);
@@ -350,6 +357,7 @@ function census(skills, conflicts) {
     risky: skills.filter((s) => ["high", "critical"].includes(s.risk)).length,
     conflicts: conflicts.length,
     trash: listStore("trash").length,
+    archived: listStore("archive").length,
   };
 }
 
@@ -361,6 +369,8 @@ export function toCatalogSkill(s) {
     description: s.description,
     drawerId: s.drawerId,
     drawerLabel: s.drawerLabel,
+    agentId: s.agentId,
+    agentLabel: s.agentLabel,
     kind: s.kind,
     scope: s.scope,
     writable: s.writable,
@@ -420,7 +430,7 @@ export function writeSkillFile(summary, relPath, content) {
 
 export function assertMutable(summary, drawers) {
   const target = path.resolve(summary.path);
-  const roots = [...drawers.map((d) => d.root), path.join(drawerHome(), "disabled")];
+  const roots = [...drawers.map((d) => d.root), path.join(drawerHome(), "disabled"), path.join(drawerHome(), "archive")];
   const ok = roots.some((r) => contained(target, r) && path.resolve(r) !== target);
   if (!ok || target === HOME) {
     throw httpError(403, ok ? "Refusing to touch a drawer root" : "Skill is outside known drawers");
@@ -430,4 +440,34 @@ export function assertMutable(summary, drawers) {
   const isFileSkill = install.file && isSkillFileName(path.basename(target));
   if (!isFolderSkill && !isFileSkill) throw httpError(400, "Not a skill path");
   return target;
+}
+
+/**
+ * Copy (or move) a skill into another drawer. Symlinks are dereferenced so
+ * the destination gets a real copy.
+ */
+export function copySkill(summary, drawer, { move = false, overwrite = false, newName = "" } = {}) {
+  if (!drawer.writable) throw httpError(403, `${drawer.label} is managed by its tool`);
+  const source = path.resolve(summary.path);
+  const base = newName ? newName.replace(/[^\w.-]+/g, "-") : path.basename(source);
+  const dest = path.join(drawer.root, summary.file && !/\.md$/i.test(base) ? `${base}.md` : base);
+  if (real(dest) === real(source)) throw httpError(400, "Source and destination are the same");
+  if (exists(dest) || describeInstall(dest).link) {
+    if (!overwrite) throw httpError(409, `${dest} already exists in ${drawer.label}`);
+    fs.rmSync(dest, { recursive: true, force: true });
+  }
+  fs.mkdirSync(drawer.root, { recursive: true });
+  if (move && !summary.link) {
+    try {
+      fs.renameSync(source, dest);
+    } catch (err) {
+      if (err.code !== "EXDEV") throw err;
+      fs.cpSync(source, dest, { recursive: true, dereference: true });
+      fs.rmSync(source, { recursive: true, force: true });
+    }
+  } else {
+    fs.cpSync(source, dest, { recursive: true, dereference: true, filter: (p) => !SKIP_WALK.has(path.basename(p)) || p === source });
+    if (move) fs.unlinkSync(source);
+  }
+  return { from: source, to: dest, moved: move };
 }

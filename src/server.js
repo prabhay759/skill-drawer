@@ -9,14 +9,16 @@ import {
   readSkill,
   readSkillFile,
   writeSkillFile,
+  resolveSkillFile,
   assertMutable,
   toCatalogSkill,
   findSkillFile,
+  copySkill,
 } from "./scan.js";
 import { listStore, stash, restore, purge, purgeAll, storeRoot } from "./store.js";
 import { exportManifest, importManifest, parseManifest } from "./manifest.js";
 import { installSkills } from "./install.js";
-import { setFrontmatterName, stringifyFrontmatter } from "./frontmatter.js";
+import { setFrontmatterName, stringifyFrontmatter, replaceFrontmatter, parseFrontmatter } from "./frontmatter.js";
 import { HOME, drawerHome, exists, httpError, removePath, slugify } from "./util.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -114,6 +116,19 @@ export function createApp(options = {}) {
         const d = byId.get(s.drawerId);
         if (d) d.count += 1;
       }
+      const visibleDrawers = drawers.filter((d) => d.count > 0 || d.writable);
+      const agents = [];
+      const agentById = new Map();
+      for (const d of visibleDrawers) {
+        if (!agentById.has(d.agentId)) {
+          agentById.set(d.agentId, { id: d.agentId, label: d.agentLabel, count: 0, drawers: [] });
+          agents.push(agentById.get(d.agentId));
+        }
+        const a = agentById.get(d.agentId);
+        a.count += d.count;
+        a.drawers.push(d.id);
+      }
+      agents.sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
       return {
         home: HOME,
         cwd: opts.cwd,
@@ -122,7 +137,8 @@ export function createApp(options = {}) {
         scannedAt: cache.at,
         total: index.skills.length,
         census: index.census,
-        drawers: drawers.filter((d) => d.count > 0 || d.writable),
+        agents,
+        drawers: visibleDrawers,
         skills: index.skills.map(toCatalogSkill),
         conflicts: index.conflicts,
       };
@@ -296,6 +312,121 @@ export function createApp(options = {}) {
     }
     invalidate();
     return { disabled: done, errors };
+  }));
+
+  app.put("/api/skills/:id/frontmatter", wrap((req) => {
+    const data = req.body?.data;
+    if (!data || typeof data !== "object" || Array.isArray(data)) throw httpError(400, "`data` must be a mapping");
+    const { skill } = findSkill(req.params.id);
+    if (!skill.writable) throw httpError(403, "This skill is read-only");
+    const text = fs.readFileSync(skill.skillFile, "utf8");
+    const next = replaceFrontmatter(text, data);
+    fs.writeFileSync(skill.skillFile, next, "utf8");
+    invalidate();
+    return { ok: true, frontmatter: parseFrontmatter(next).data };
+  }));
+
+  app.delete("/api/skills/:id/file", wrap((req) => {
+    const rel = String(req.query.path || "");
+    if (!rel) throw httpError(400, "Missing path");
+    const { skill } = findSkill(req.params.id);
+    if (!skill.writable) throw httpError(403, "This skill is read-only");
+    if (skill.file || rel === skill.skillRel) throw httpError(400, "Trash the skill instead of deleting its SKILL.md");
+    const { abs, rel: cleaned } = resolveSkillFile(skill, rel);
+    if (!exists(abs)) throw httpError(404, "File not found");
+    fs.rmSync(abs, { recursive: true, force: true });
+    invalidate();
+    return { deleted: cleaned };
+  }));
+
+  const transfer = (ids, body) => {
+    const index = getIndex(true);
+    const drawer = drawerFor(index, body?.drawerId);
+    const move = Boolean(body?.move);
+    const done = [];
+    const errors = [];
+    for (const id of ids) {
+      const s = index.byId.get(id);
+      if (!s) {
+        errors.push({ id, error: "Skill not in the drawer" });
+        continue;
+      }
+      try {
+        if (s.disabled) throw new Error("Enable the skill before copying it");
+        if (move) assertMutable(s, index.drawers);
+        const r = copySkill(s, drawer, { move, overwrite: Boolean(body?.overwrite), newName: ids.length === 1 ? body?.name || "" : "" });
+        done.push({ id, name: s.name, ...r });
+      } catch (err) {
+        errors.push({ id, name: s.name, error: err.message });
+      }
+    }
+    invalidate();
+    const fresh = getIndex();
+    for (const d of done) {
+      const created = fresh.skills.find((x) => x.path === d.to);
+      if (created) d.skill = toCatalogSkill(created);
+    }
+    return { done, errors, drawer: drawer.label, moved: move };
+  };
+
+  app.post("/api/skills/copy", wrap((req) => {
+    const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(String) : [];
+    if (!ids.length) throw httpError(400, "No skills selected");
+    return transfer(ids, req.body);
+  }));
+  app.post("/api/skills/:id/copy", wrap((req) => transfer([req.params.id], req.body)));
+
+  const archiveIds = (ids) => {
+    const index = getIndex(true);
+    const archived = [];
+    const errors = [];
+    for (const id of ids) {
+      const s = index.byId.get(id);
+      if (!s) {
+        errors.push({ id, error: "Skill not in the drawer" });
+        continue;
+      }
+      try {
+        if (s.disabled) throw new Error("Enable the skill before archiving it");
+        if (s.kind === "builtin" || s.kind === "plugin") throw new Error("Tool-managed skills come back on the next update; copy it to a user drawer first");
+        assertMutable(s, index.drawers);
+        const entry = stash("archive", s, { agentId: s.agentId, agentLabel: s.agentLabel, description: s.description });
+        archived.push({ id, name: s.name, entryId: entry.entryId });
+      } catch (err) {
+        errors.push({ id, name: s.name, error: err.message });
+      }
+    }
+    invalidate();
+    return { archived, errors };
+  };
+  app.post("/api/skills/archive", wrap((req) => {
+    const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(String) : [];
+    if (!ids.length) throw httpError(400, "No skills selected");
+    return archiveIds(ids);
+  }));
+  app.post("/api/skills/:id/archive", wrap((req, res) => {
+    const out = archiveIds([req.params.id]);
+    if (!out.archived.length) res.status(400);
+    return out;
+  }));
+  app.get("/api/archive", wrap(() => ({ root: storeRoot("archive"), entries: listStore("archive") })));
+  app.post("/api/archive/:entry/restore", wrap((req) => {
+    let target;
+    if (req.body?.drawerId) {
+      const index = getIndex();
+      const drawer = drawerFor(index, req.body.drawerId);
+      const entry = listStore("archive").find((e) => e.entryId === req.params.entry);
+      if (!entry) throw httpError(404, "Entry not found");
+      target = path.join(drawer.root, entry.type === "dir" ? path.basename(entry.originalPath) : entry.payload);
+    }
+    const out = restore("archive", req.params.entry, { target });
+    invalidate();
+    return { restored: out };
+  }));
+  app.delete("/api/archive/:entry", wrap((req) => {
+    const out = purge("archive", req.params.entry);
+    invalidate();
+    return { purged: out };
   }));
 
   app.get("/api/trash", wrap(() => ({ root: storeRoot("trash"), entries: listStore("trash") })));

@@ -84,3 +84,46 @@ test("cross-origin requests are rejected and unknown ids 404", async (t) => {
   const missing = await call("/api/skills/nope");
   assert.equal(missing.status, 404);
 });
+
+test("copy, move, archive, frontmatter and file delete over HTTP", async (t) => {
+  const { call, env } = await boot(t);
+  fs.mkdirSync(path.join(env.home, ".cursor/skills"), { recursive: true });
+  let r = await call("/api/skills?refresh=1");
+  assert.ok(r.body.agents.some((a) => a.label === "Claude Code"));
+  const cursor = r.body.drawers.find((d) => d.agentId === "cursor");
+  const id = r.body.skills[0].id;
+
+  r = await call(`/api/skills/${id}/copy`, { method: "POST", body: { drawerId: cursor.id } });
+  assert.equal(r.status, 200);
+  assert.equal(r.body.done.length, 1);
+  assert.equal(r.body.done[0].skill.agentId, "cursor");
+  const copyId = r.body.done[0].skill.id;
+
+  r = await call(`/api/skills/${copyId}/frontmatter`, { method: "PUT", body: { data: { name: "alpha", description: "Changed via form.", tags: ["a"] } } });
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body.frontmatter.tags, ["a"]);
+
+  r = await call(`/api/skills/${copyId}/file`, { method: "PUT", body: { path: "notes/x.md", content: "hi" } });
+  assert.equal(r.status, 200);
+  r = await call(`/api/skills/${copyId}/file?path=notes/x.md`, { method: "DELETE" });
+  assert.equal(r.status, 200);
+  r = await call(`/api/skills/${copyId}/file?path=SKILL.md`, { method: "DELETE" });
+  assert.equal(r.status, 400);
+
+  r = await call(`/api/skills/${copyId}/archive`, { method: "POST" });
+  assert.equal(r.status, 200);
+  const entry = r.body.archived[0].entryId;
+  r = await call("/api/archive");
+  assert.equal(r.body.entries.length, 1);
+  const claude = (await call("/api/skills")).body.drawers.find((d) => d.agentId === "claude");
+  r = await call(`/api/archive/${entry}/restore`, { method: "POST", body: { drawerId: claude.id } });
+  assert.equal(r.status, 409); // alpha already exists in ~/.claude/skills
+  r = await call(`/api/archive/${entry}/restore`, { method: "POST", body: { drawerId: cursor.id } });
+  assert.equal(r.status, 200);
+
+  r = await call("/api/skills/copy", { method: "POST", body: { ids: [id], drawerId: cursor.id, move: true, overwrite: true } });
+  assert.equal(r.body.done.length, 1);
+  r = await call("/api/skills");
+  assert.equal(r.body.skills.length, 1);
+  assert.equal(r.body.skills[0].agentId, "cursor");
+});
