@@ -1,0 +1,86 @@
+# Automated npm release. Two ways to publish, no local npm login needed:
+#
+#   1. Merge to main with a bumped "version" in package.json. If that version
+#      is not on npm yet, it is published and a GitHub release is created.
+#   2. Actions -> Release -> "Run workflow" and pick patch / minor / major.
+#      The workflow bumps package.json, commits, tags, publishes and releases.
+#
+# Auth: add an NPM_TOKEN repository secret (npmjs.com -> Access Tokens ->
+# Granular, "Read and write", bypass 2FA for automation). Once the package
+# exists you can instead configure Trusted Publishing on npmjs.com for
+# repo prabhay759/skill-drawer, workflow release.yml, and drop the secret;
+# the id-token permission below is what that needs.
+name: Release
+on:
+  push:
+    branches: [main]
+    paths: [package.json]
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version bump to apply before publishing
+        type: choice
+        default: patch
+        options: [patch, minor, major, none]
+concurrency:
+  group: release
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - run: npm install -g npm@latest
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+
+      - name: Bump version
+        if: github.event_name == 'workflow_dispatch' && inputs.bump != 'none'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          npm version "${{ inputs.bump }}" -m "chore(release): v%s"
+          git push --follow-tags origin HEAD:main
+
+      - name: Resolve version
+        id: v
+        run: |
+          NAME=$(node -p "require('./package.json').name")
+          VERSION=$(node -p "require('./package.json').version")
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if npm view "$NAME@$VERSION" version >/dev/null 2>&1; then
+            echo "published=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::$NAME@$VERSION is already on npm; nothing to publish."
+          else
+            echo "published=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish to npm
+        if: steps.v.outputs.published == 'false'
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Tag and GitHub release
+        if: steps.v.outputs.published == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: v${{ steps.v.outputs.version }}
+        run: |
+          if ! git rev-parse "$TAG" >/dev/null 2>&1; then
+            git tag "$TAG"
+            git push origin "$TAG"
+          fi
+          node scripts/release-notes.js "${{ steps.v.outputs.version }}" > release-notes.md
+          gh release create "$TAG" --title "${{ steps.v.outputs.name }} $TAG" --notes-file release-notes.md --verify-tag

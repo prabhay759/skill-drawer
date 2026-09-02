@@ -15,13 +15,15 @@
     "src",
     "web",
     "README.md",
+    "FEATURES.md",
+    "CHANGELOG.md",
     "LICENSE"
   ],
   "scripts": {
     "start": "node bin/skill-drawer.js",
     "dev": "node --watch bin/skill-drawer.js --no-open",
     "test": "node --test test/*.test.js",
-    "lint": "node --check src/*.js bin/*.js web/app.js"
+    "lint": "node --check src/*.js bin/*.js scripts/*.js web/app.js"
   },
   "engines": {
     "node": ">=20"

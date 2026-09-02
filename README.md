@@ -135,6 +135,17 @@ import { scanSkills, lintSkill, detectConflicts, exportManifest } from "skill-dr
 const { skills, drawers, conflicts, census } = scanSkills({ cwd: process.cwd() });
 ```
 
+## Releasing
+
+Releases are automated in `.github/workflows/release.yml`; nothing is published from a laptop.
+
+- **Merge to `main` with a bumped `version` in `package.json`.** If that version is not on npm yet, CI runs the tests, publishes with provenance, tags `vX.Y.Z` and creates a GitHub release whose notes come from the matching `CHANGELOG.md` section.
+- **Or click Actions → Release → Run workflow** and choose patch, minor or major. The workflow bumps the version, commits, tags, publishes and releases.
+
+One-time setup: add an `NPM_TOKEN` repository secret (npmjs.com → Access Tokens → Granular, read and write, with 2FA bypass for automation). After the first publish you can switch the package to npm Trusted Publishing for this repo and workflow and delete the secret.
+
+See [FEATURES.md](FEATURES.md) for what is covered relative to skill-cabinet and what is deliberately out of scope.
+
 ## Development
 
 ```
