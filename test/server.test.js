@@ -89,7 +89,7 @@ test("copy, move, archive, frontmatter and file delete over HTTP", async (t) => 
   const { call, env } = await boot(t);
   fs.mkdirSync(path.join(env.home, ".cursor/skills"), { recursive: true });
   let r = await call("/api/skills?refresh=1");
-  assert.ok(r.body.agents.some((a) => a.label === "Claude Code"));
+  assert.ok(r.body.agents.some((a) => a.label === "Claude"));
   const cursor = r.body.drawers.find((d) => d.agentId === "cursor");
   const id = r.body.skills[0].id;
 

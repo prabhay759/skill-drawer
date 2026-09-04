@@ -1,4 +1,6 @@
 /* Skill Drawer UI — vanilla JS, no build step. */
+import { parseQuery, scoreSkill, matchRanges, FILTERS } from "./query.js";
+
 (() => {
   "use strict";
 
@@ -35,6 +37,7 @@
     tab: "rendered",
     editorDirty: false,
     ai: null,
+    parsedQuery: parseQuery(""),
     assessments: {},
     closedAgents: new Set(),
     closedGroups: new Set(),
@@ -254,21 +257,33 @@
   const RISK = { none: 0, low: 1, medium: 2, high: 3, critical: 4 };
   const LINT = { ok: 0, info: 1, warning: 2, error: 3 };
 
-  function matches(s, q) {
-    if (!q) return true;
-    const hay = [s.name, s.slug, s.description, s.path, s.drawerLabel, s.agentLabel, JSON.stringify(s.frontmatter || {})].join("\n").toLowerCase();
-    return q.split(/\s+/).every((term) => hay.includes(term));
+  /** Escape text, wrapping the parts the query matched in <mark>. */
+  function mark(text, query) {
+    const ranges = matchRanges(text, query);
+    if (!ranges.length) return esc(text);
+    let out = "";
+    let at = 0;
+    for (const [start, end] of ranges) {
+      out += esc(text.slice(at, start)) + `<mark>${esc(text.slice(start, end))}</mark>`;
+      at = end;
+    }
+    return out + esc(text.slice(at));
   }
 
   function applyFilters() {
-    const q = state.query.trim().toLowerCase();
+    const query = parseQuery(state.query);
+    state.parsedQuery = query;
+    const scores = new Map();
     let list = state.skills.filter((s) => {
       if (state.drawer === "__disabled") return s.disabled;
       if (!state.filters.disabled && s.disabled) return false;
       if (state.drawer !== "all" && s.drawerId !== state.drawer) return false;
       if (state.drawer === "all" && state.agent !== "all" && s.agentId !== state.agent) return false;
       if (state.filters.attention && s.lint === "ok" && s.risk === "none" && !s.copyCount) return false;
-      return matches(s, q);
+      const score = scoreSkill(s, query);
+      if (!score) return false;
+      scores.set(s.id, score);
+      return true;
     });
     const by = {
       agent: (a, b) => a.agentLabel.localeCompare(b.agentLabel) || a.drawerLabel.localeCompare(b.drawerLabel) || a.name.localeCompare(b.name),
@@ -281,7 +296,9 @@
       lint: (a, b) => LINT[b.lint] - LINT[a.lint] || b.lintCount - a.lintCount,
       quality: (a, b) => (a.qualityScore ?? 101) - (b.qualityScore ?? 101),
     };
-    list.sort(by[state.sort] || by.agent);
+    // While searching, the best match wins; the chosen sort breaks ties.
+    const tiebreak = by[state.sort] || by.agent;
+    list.sort(query.empty ? tiebreak : (a, b) => scores.get(b.id) - scores.get(a.id) || tiebreak(a, b));
     state.filtered = list;
     renderList();
   }
@@ -315,8 +332,8 @@
     return `<div class="skill-card ${s.id === state.activeId ? "active" : ""} ${state.marked.has(s.id) ? "marked" : ""} ${s.disabled ? "disabled" : ""}" data-id="${s.id}">
             <input type="checkbox" data-mark="${s.id}" ${state.marked.has(s.id) ? "checked" : ""} aria-label="Mark ${esc(s.name)}" />
             <div>
-              <div class="name">${esc(s.name)} ${badges(s)}</div>
-              <div class="desc">${esc(s.description || "No description")}</div>
+              <div class="name">${mark(s.name, state.parsedQuery)} ${badges(s)}</div>
+              <div class="desc">${s.description ? mark(s.description, state.parsedQuery) : "No description"}</div>
               <div class="meta">${state.groupByAgent ? "" : `<span class="agent-chip">${esc(s.agentLabel)}</span>`}<span>${esc(s.drawerLabel)}</span><span title="${fmtDate(s.mtime)}">${ago(s.mtime)}</span><span>${fmtBytes(s.bytes)}</span>${s.origin ? `<span title="${esc(s.origin.url)}">${esc(s.origin.label)}</span>` : ""}</div>
             </div>
           </div>`;
@@ -324,7 +341,7 @@
 
   function renderList() {
     const list = $("#list");
-    $("#list-summary").textContent = `${state.filtered.length} skill${state.filtered.length === 1 ? "" : "s"}`;
+    $("#list-summary").textContent = `${state.filtered.length} skill${state.filtered.length === 1 ? "" : "s"}${state.parsedQuery.empty ? "" : ", best match first"}`;
     list.classList.toggle("selecting", state.marked.size > 0);
     if (!state.filtered.length) {
       const d = state.data.drawers.find((x) => x.id === state.drawer);
@@ -1577,6 +1594,9 @@
     modal({
       title: "Keyboard shortcuts",
       body: `<div class="shortcuts">${rows.map(([k, v]) => `<kbd>${esc(k)}</kbd><span>${esc(v)}</span>`).join("")}</div>
+        <div class="section-title">Search</div>
+        <p class="muted" style="margin-top:0">Bare words must all match; results are ranked by how well they match. Wrap a <code>"phrase"</code> in quotes, prefix with <code>-</code> to exclude, and combine any of these filters:</p>
+        <div class="syntax">${FILTERS.map(([k, hint]) => `<code>${esc(k)}:</code><span class="muted">${esc(hint)}</span>`).join("")}</div>
         <p class="muted" style="margin-top:14px">Trash keeps everything you delete under <span class="mono">${esc(state.data?.storeHome || "~/.skill-drawer")}/trash</span> until you empty it. Disable moves a skill to a quarantine folder so the tool stops loading it; Enable puts it back.</p>`,
     });
   }

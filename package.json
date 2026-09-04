@@ -1,6 +1,6 @@
 {
   "name": "skill-drawer",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Browse, lint, organise, trash-and-restore, disable, edit, export and install agent skills across every drawer on your machine (.agents, .claude, .codex, .cursor, .gemini, project-local and more).",
   "type": "module",
   "bin": {

@@ -19,7 +19,7 @@ test("drawers and skills are classified per agent", (t) => {
   writeSkill(path.join(proj, ".github/skills/e"), { name: "e", description: "Epsilon skill does epsilon things." });
   const index = scanSkills({ home: env.home, cwd: proj });
   const by = Object.fromEntries(index.skills.map((s) => [s.name, s.agentLabel]));
-  assert.deepEqual(by, { a: "Claude Code", b: "Cursor", c: "Cursor", d: "Weirdtool", e: "GitHub Copilot" });
+  assert.deepEqual(by, { a: "Claude", b: "Cursor", c: "Cursor", d: "Weirdtool", e: "GitHub Copilot" });
   assert.equal(discoverDrawers({ home: env.home, cwd: proj }).every((d) => d.agentId), true);
   assert.equal(agentForFolder(".codex").label, "Codex");
   assert.equal(agentForPath("/home/u/.gemini/antigravity/skills").id, "gemini");
@@ -58,12 +58,12 @@ test("archive then unarchive into a different drawer", (t) => {
   const dir = writeSkill(path.join(env.home, ".claude/skills/alpha"), { name: "alpha", description: "Alpha skill does alpha things." });
   fs.mkdirSync(path.join(env.home, ".codex/skills"), { recursive: true });
   let index = scanSkills({ home: env.home, project: false });
-  const entry = stash("archive", index.skills[0], { agentId: "claude", agentLabel: "Claude Code" });
+  const entry = stash("archive", index.skills[0], { agentId: "claude", agentLabel: "Claude" });
   assert.equal(fs.existsSync(dir), false);
   index = scanSkills({ home: env.home, project: false });
   assert.equal(index.skills.length, 0);
   assert.equal(index.census.archived, 1);
-  assert.equal(listStore("archive")[0].agentLabel, "Claude Code");
+  assert.equal(listStore("archive")[0].agentLabel, "Claude");
   const codex = path.join(env.home, ".codex/skills/alpha");
   const r = restore("archive", entry.entryId, { target: codex });
   assert.equal(r.restoredTo, codex);

@@ -97,6 +97,15 @@ Skill Drawer started from a review of [skill-cabinet](https://github.com/subsy/s
 | **Capped Issues panel** | Findings group by kind, each capped at eight with a "show more" expander, so hundreds of overlap pairs stay readable. |
 | **Fewer filters, themes and export formats** | Four "Show" checkboxes become one **Needs attention**; five themes become Auto/Dark/Light with Auto following `prefers-color-scheme`; Export always writes a bundle in the UI, with `--manifest` kept on the CLI. The unused `~/.<tool>/skill` singular scan is gone. |
 
+## Added in 0.7.0
+
+| Request | What was built |
+|---|---|
+| **Cowork's path does not load; it is in personal OneDrive** | `src/onedrive.js` locates OneDrive from the `OneDriveConsumer` / `OneDrive` / `OneDriveCommercial` env vars, then `~/OneDrive`, `~/OneDrive - <Org>` and macOS `~/Library/CloudStorage/OneDrive-*`, preferring folders that exist. The Cowork agent resolves `<root>/Documents/Cowork/Skills` for every root plus `~/Documents/Cowork/Skills` for Known Folder Move. Agents can now declare several user folders (`userSkillsPaths`), and every resolved folder that exists becomes a drawer — the home dot-folder scan never reached OneDrive. Renamed to **Microsoft Cowork**, and Teams Toolkit signals were dropped so it no longer reports installed for an unrelated product. |
+| **Remove Agents (shared)** | The built-in entry is gone, `.agents` is in the home skip list, and `.agents/skills` is out of the project search path, so nothing about it is scanned or listed. A custom agent covers anyone who still uses it. |
+| **Claude Code → Claude** | Label change. |
+| **Smarter search** | `web/query.js`, a dependency-free module shared by the page and the test suite: a tokenizer that keeps `"quoted phrases"` together, negation, ten field filters, comparison operators on ranked and numeric fields, boolean flags, relevance scoring by match location, a fuzzy subsequence fallback, and merged match ranges for highlighting. `web/app.js` became an ES module so it can import it; results sort by relevance while a query is present, matches are highlighted with `<mark>`, and the syntax is documented in the help dialog. |
+
 ## Out of scope, on purpose
 
 - **Multi-user or remote access.** The server binds to 127.0.0.1 and has no auth; putting it on a network would need both.

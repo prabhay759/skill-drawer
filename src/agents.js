@@ -13,16 +13,19 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { loadAgentSettings } from "./settings.js";
+import { oneDrivePaths } from "./onedrive.js";
 
 const BUILT_IN = [
-  { id: "claude", label: "Claude Code", folders: [".claude"], bins: ["claude"], userSkills: ".claude/skills", projectSkills: [".claude/skills"] },
+  { id: "claude", label: "Claude", folders: [".claude"], bins: ["claude"], userSkills: ".claude/skills", projectSkills: [".claude/skills"] },
   { id: "copilot", label: "GitHub Copilot", folders: [".copilot"], bins: ["copilot", "github-copilot-cli"], apps: [".vscode/extensions"], appMatch: /github\.copilot/i, userSkills: ".copilot/skills", projectSkills: [".github/skills"] },
   {
+    // Cowork keeps its skills in the user's OneDrive, not in a home dot-folder.
     id: "m365",
-    label: "Microsoft 365 Copilot",
-    folders: [".m365", ".microsoft365agents", ".fx", ".copilotstudio"],
-    bins: ["m365", "atk", "teamsfx", "pac"],
+    label: "Microsoft Cowork",
+    folders: [".m365", ".microsoft365agents", ".copilotstudio"],
+    bins: ["m365", "atk", "pac"],
     userSkills: ".m365/skills",
+    userSkillsPaths: (home, env) => oneDrivePaths("Documents/Cowork/Skills", { home, env }),
     projectSkills: [".m365/skills", ".microsoft365agents/skills", "appPackage/skills"],
   },
   { id: "cursor", label: "Cursor", folders: [".cursor"], bins: ["cursor"], userSkills: ".cursor/skills", projectSkills: [".cursor/skills"] },
@@ -43,8 +46,6 @@ const BUILT_IN = [
   { id: "qwen", label: "Qwen Code", folders: [".qwen"], bins: ["qwen"], userSkills: ".qwen/skills", projectSkills: [".qwen/skills"] },
   { id: "augment", label: "Augment", folders: [".augment"], bins: ["auggie"], userSkills: ".augment/skills", projectSkills: [".augment/skills"] },
   { id: "vscode", label: "VS Code", folders: [], bins: ["code"], userSkills: "", projectSkills: [] },
-  // Cross-tool conventions: shown only when they hold skills, never placeheld.
-  { id: "agents", label: "Agents (shared)", shared: true, folders: [".agents"], bins: [], userSkills: ".agents/skills", projectSkills: [".agents/skills"] },
 ];
 
 /** Built-ins plus the user's custom agents. */
@@ -62,6 +63,20 @@ export function allAgents(settings = loadAgentSettings()) {
   const byId = new Map(BUILT_IN.map((a) => [a.id, a]));
   for (const c of custom) byId.set(c.id, { ...(byId.get(c.id) || {}), ...c });
   return [...byId.values()];
+}
+
+/**
+ * Every folder this agent might keep user-level skills in, most likely first.
+ * Absolute for custom agents and for agents that resolve their own paths
+ * (Cowork looks inside OneDrive); otherwise relative to the home directory.
+ */
+export function resolveUserSkills(agent, home = os.homedir(), env = process.env) {
+  if (agent.userSkillsAbs) return [path.resolve(agent.userSkillsAbs)];
+  if (typeof agent.userSkillsPaths === "function") {
+    const found = agent.userSkillsPaths(home, env) || [];
+    if (found.length) return found.map((p) => path.resolve(p));
+  }
+  return agent.userSkills ? [path.join(home, agent.userSkills)] : [];
 }
 
 function folderIndex(agents) {
@@ -144,8 +159,9 @@ function appMatch(home, a) {
  * Which agents are present on this machine, with the evidence.
  * Hidden agents are returned with `hidden: true` so settings can show them.
  */
-export function detectAgents({ home = os.homedir(), envPath = process.env.PATH, settings = loadAgentSettings() } = {}) {
+export function detectAgents({ home = os.homedir(), envPath = process.env.PATH, env = process.env, settings = loadAgentSettings() } = {}) {
   const hidden = new Set(settings.hidden || []);
+  const envForAgent = env;
   return allAgents(settings).map((a) => {
     const via = [];
     for (const f of a.folders || []) {
@@ -160,14 +176,21 @@ export function detectAgents({ home = os.homedir(), envPath = process.env.PATH, 
     }
     const app = appMatch(home, a);
     if (app) via.push(path.relative(home, app).replace(/\\/g, "/"));
-    const userSkills = a.userSkillsAbs || (a.userSkills ? path.join(home, a.userSkills) : null);
-    if (a.userSkillsAbs) {
+    const candidates = resolveUserSkills(a, home, envForAgent);
+    const present = candidates.filter((p) => {
       try {
-        if (fs.statSync(a.userSkillsAbs).isDirectory()) via.push(a.userSkillsAbs);
+        return fs.statSync(p).isDirectory();
       } catch {
-        /* missing */
+        return false;
       }
+    });
+    // A skills folder that exists is itself proof the tool is in use — the
+    // only signal for agents like Cowork that keep nothing in a dot-folder.
+    // Only report it when nothing else already found the tool.
+    if (!via.length) {
+      for (const p of present) via.push(p.startsWith(home) ? `~/${path.relative(home, p).replace(/\\/g, "/")}` : p);
     }
+    const userSkills = present[0] || candidates[0] || null;
     return {
       id: a.id,
       label: a.label,
@@ -177,6 +200,7 @@ export function detectAgents({ home = os.homedir(), envPath = process.env.PATH, 
       hidden: hidden.has(a.id),
       via,
       userSkills,
+      userSkillsAll: candidates,
       projectSkills: a.projectSkills || [],
     };
   });

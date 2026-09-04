@@ -22,6 +22,7 @@ Skill Drawer covers everything [skill-cabinet](https://github.com/subsy/skill-ca
 | **Overlap check** across skills with threshold and AI verdicts | | ✓ |
 | Extra roots on the command line (`--root`) | | ✓ |
 | Filter by drawer, search name/description/path/frontmatter | ✓ | ✓ |
+| **Query language and relevance ranking** in search | | ✓ |
 | Rendered body, raw source, frontmatter, extra files | ✓ | ✓ |
 | Static risk audit (curl-pipe-bash, credential paths, prompt override…) | ✓ | ✓ |
 | Origin inference (frontmatter, path, plugin.json, git remote) | ✓ | ✓ |
@@ -67,13 +68,30 @@ Requires Node 20+. `git` is needed only for installing skills from GitHub.
 
 Every agent reads its own folder, so a skill written for Claude Code is invisible to Cursor until it is copied there. Select a skill (or mark several), click **Copy to…** and pick the target drawer; the picker is grouped by agent. **Move to…** does the same but removes the original. Copies are real folders, never symlinks, so the target tool's updater cannot break them.
 
+### Search
+
+Bare words must all match and results are ranked by where they hit: an exact name beats a prefix, which beats a word-boundary match, which beats the description, then the path and frontmatter. Matches are highlighted, and `pdftls` still finds `pdf-tools` through a fuzzy fallback.
+
+| Syntax | Finds |
+|---|---|
+| `pdf merge` | skills matching both words |
+| `"pdf forms"` | that exact phrase |
+| `-deploy` | everything except matches for `deploy` |
+| `agent:cursor` | skills Cursor loads |
+| `drawer:.claude` `path:project` | by drawer or folder |
+| `name:pdf` `desc:merge` | one field only |
+| `risk:>=high` `lint:error` | ranked fields, with comparisons |
+| `q:<50` `score:>=80` | by quality score |
+| `is:disabled` `is:project` `is:duplicate` `is:readonly` | flags |
+| `has:copies` `has:lint` `has:risk` `has:files` | presence |
+
+Press `?` for the full list.
+
 ### Which agents appear
 
 The sidebar lists an agent when it is installed on this machine (a home folder such as `~/.copilot` or `~/.claude`, a CLI such as `codex` on your PATH, or a VS Code extension such as GitHub Copilot) or when a skills folder for it already exists. Hover an agent name to see how it was detected. An installed agent with no skills folder yet shows an empty, italic drawer; copying, installing or creating a skill there makes the folder. Agents that are neither installed nor holding skills stay hidden. Click the chevron to close or open a group; the choice is remembered.
 
-Supported agents include Claude Code, GitHub Copilot (`~/.copilot/skills`, `.github/skills`), Microsoft 365 Copilot (`~/.m365/skills`, `.m365/skills`, `.microsoft365agents/skills`, `appPackage/skills`), Cursor, Codex, Gemini, Windsurf, Kiro, OpenCode, Amp, Continue, Cline, Roo Code, Aider, Goose, Zed, Junie, Trae, Qwen Code and Augment.
-
-`~/.agents/skills` is a cross-tool convention rather than a product, so it appears only when it actually holds skills and never as an empty drawer.
+Supported agents include Claude, GitHub Copilot (`~/.copilot/skills`, `.github/skills`), Microsoft Cowork (`<OneDrive>/Documents/Cowork/Skills`, found from the OneDrive environment variables, `~/OneDrive`, `~/OneDrive - <Org>`, macOS `~/Library/CloudStorage/OneDrive-*`, or plain `~/Documents/Cowork/Skills`), Cursor, Codex, Gemini, Windsurf, Kiro, OpenCode, Amp, Continue, Cline, Roo Code, Aider, Goose, Zed, Junie, Trae, Qwen Code and Augment.
 
 **Your own agents.** Click "edit" beside AGENTS to show or hide any agent, or to add one: a name, an absolute skills folder, and optional project-relative folders. Custom agents are scanned, grouped and written to exactly like the built-ins, and are stored in `~/.skill-drawer/agents.json`. Use this when a tool keeps its skills somewhere Skill Drawer does not know about yet.
 

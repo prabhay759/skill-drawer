@@ -15,7 +15,7 @@
       <span id="readonly-badge" class="badge badge-warn" hidden>read-only</span>
     </div>
     <div class="search-wrap">
-      <input id="search" type="search" placeholder="Search name, description, path, frontmatter…  ( / )" autocomplete="off" />
+      <input id="search" type="search" placeholder="Search, or filter: agent:cursor risk:&gt;=high q:&lt;50 -deploy  ( / )" autocomplete="off" />
     </div>
     <div class="toolbar">
       <div class="menu-wrap">
@@ -109,6 +109,6 @@
 
   <script src="/vendor/marked/marked.min.js"></script>
   <script src="/vendor/dompurify/dist/purify.min.js"></script>
-  <script src="/app.js"></script>
+  <script type="module" src="/app.js"></script>
 </body>
 </html>

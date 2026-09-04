@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.7.0
+
+- **Microsoft Cowork reads its real folder.** Cowork keeps skills in your OneDrive, not in a home dot-folder, so the agent now looks in `<OneDrive>/Documents/Cowork/Skills`. OneDrive is located from the `OneDriveConsumer`, `OneDrive` and `OneDriveCommercial` environment variables, then from `~/OneDrive`, `~/OneDrive - <Org>` and `~/Library/CloudStorage/OneDrive-*` on macOS, with plain `~/Documents/Cowork/Skills` as a fallback for Known Folder Move. A skills folder that exists is itself treated as proof the tool is in use. The agent is renamed from "Microsoft 365 Copilot" to **Microsoft Cowork**, and no longer claims to be installed just because the Teams Toolkit (`~/.fx`, `teamsfx`) is present.
+- **"Claude Code" is now "Claude."**
+- **"Agents (shared)" is gone.** `~/.agents/skills` is no longer scanned or listed at all. If you keep skills there, add it back as a custom agent under Agents → edit.
+- **Smarter search.** The box now takes a small query language and ranks results instead of only filtering them:
+  - bare words must all match, ranked by where they hit — an exact name beats a prefix, which beats a word-boundary hit, which beats the description, path, or frontmatter;
+  - `"quoted phrases"` match as one string, and `-term` excludes;
+  - filters: `agent:`, `drawer:`, `name:`, `desc:`, `path:`, `risk:`, `lint:`, `score:` (alias `q:`), `is:`, `has:`;
+  - ranked and numeric fields take comparisons — `risk:>=high`, `lint:error`, `q:<50`;
+  - flags such as `is:disabled`, `is:project`, `is:duplicate`, `has:copies`, `has:risk`;
+  - a fuzzy name fallback, so `pdftls` still finds `pdf-tools`, ranked below any real match;
+  - matches are highlighted in the results, and the syntax is documented in the help dialog (`?`).
+
 ## 0.6.0
 
 **Added**

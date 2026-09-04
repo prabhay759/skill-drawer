@@ -8,15 +8,16 @@ import { discoverDrawers, scanSkills } from "../src/scan.js";
 import { startServer } from "../src/server.js";
 import { tmpHome, writeSkill } from "./helpers.js";
 
-test("Microsoft 365 Copilot is detected and mapped", (t) => {
+test("Microsoft Cowork is detected and mapped", (t) => {
   const env = tmpHome();
   t.after(env.cleanup);
   fs.mkdirSync(path.join(env.home, ".m365"), { recursive: true });
   const agents = detectAgents({ home: env.home, envPath: "" });
   const m365 = agents.find((a) => a.id === "m365");
-  assert.equal(m365.label, "Microsoft 365 Copilot");
+  assert.equal(m365.label, "Microsoft Cowork");
   assert.equal(m365.installed, true);
   assert.deepEqual(m365.via, ["~/.m365"]);
+  assert.match(m365.userSkills.replace(/\\/g, "/"), /Cowork\/Skills$/, "skills live in OneDrive, not the dot-folder");
   assert.ok(m365.projectSkills.includes("appPackage/skills"));
   assert.equal(agentForFolder(".m365").id, "m365");
   assert.equal(agentForFolder(".microsoft365agents").id, "m365");
@@ -27,18 +28,15 @@ test("Microsoft 365 Copilot is detected and mapped", (t) => {
   assert.ok(detectAgents({ home: env.home, envPath: bin }).find((a) => a.id === "m365").via.includes("atk on PATH"));
 });
 
-test("the shared .agents convention never gets a placeholder drawer", (t) => {
+test("the .agents folder is no longer an agent, and is not scanned", (t) => {
   const env = tmpHome();
   t.after(env.cleanup);
-  fs.mkdirSync(path.join(env.home, ".agents"), { recursive: true }); // present but empty
+  writeSkill(path.join(env.home, ".agents/skills/shared-one"), { name: "shared-one", description: "A skill in the old cross-tool folder." });
   fs.mkdirSync(path.join(env.home, ".claude/skills"), { recursive: true });
-  let drawers = discoverDrawers({ home: env.home, project: false });
-  assert.equal(drawers.find((d) => d.agentId === "agents"), undefined);
-  assert.ok(detectAgents({ home: env.home, envPath: "" }).find((a) => a.id === "agents").shared);
-  // It does appear once it actually holds a skill.
-  writeSkill(path.join(env.home, ".agents/skills/shared-one"), { name: "shared-one", description: "A shared skill used by several tools." });
-  drawers = discoverDrawers({ home: env.home, project: false });
-  assert.ok(drawers.find((d) => d.agentId === "agents"));
+  const drawers = discoverDrawers({ home: env.home, project: false });
+  assert.equal(drawers.find((d) => d.root.includes(".agents")), undefined);
+  assert.equal(detectAgents({ home: env.home, envPath: "" }).find((a) => a.id === "agents"), undefined);
+  assert.equal(scanSkills({ home: env.home, project: false }).skills.length, 0);
 });
 
 test("hiding an agent removes its drawers and skills", (t) => {

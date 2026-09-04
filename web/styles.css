@@ -308,3 +308,7 @@ table.grid a { cursor: pointer; }
 .shelf-item.active { background: var(--bg-3); color: var(--accent); }
 .shelf-item .count { color: var(--fg-3); font-size: 12px; }
 .shelf-item .go { color: var(--fg-3); font-size: 11px; }
+
+mark { background: color-mix(in srgb, var(--accent) 32%, transparent); color: inherit; border-radius: 2px; padding: 0 1px; }
+.syntax { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; font-size: 12.5px; }
+.syntax code { color: var(--accent); }

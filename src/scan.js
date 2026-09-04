@@ -7,7 +7,7 @@ import { auditSkill } from "./audit.js";
 import { lintSkill } from "./lint.js";
 import { detectConflicts } from "./conflicts.js";
 import { listStore } from "./store.js";
-import { agentForFolder, agentForPath, detectAgents, allAgents } from "./agents.js";
+import { agentForFolder, agentForPath, detectAgents, allAgents, resolveUserSkills } from "./agents.js";
 import { loadAgentSettings } from "./settings.js";
 import { qualityScore } from "./quality.js";
 
@@ -15,12 +15,12 @@ const SKIP_HOME_DOTDIRS = new Set([
   ".cache", ".local", ".npm", ".nvm", ".rustup", ".cargo", ".docker", ".mozilla",
   ".config", ".steam", ".var", ".wine", ".thumbnails", ".Trash", ".android",
   ".gradle", ".java", ".skill-drawer", ".vscode", ".vscode-server", ".ssh", ".gnupg",
+  ".agents",
 ]);
 
 /** Folders that tools read project-local skills from, relative to a project root. */
 export const PROJECT_SKILL_DIRS = [
   [".claude/skills", "claude"],
-  [".agents/skills", "agents"],
   [".codex/skills", "codex"],
   [".cursor/skills", "cursor"],
   [".gemini/skills", "gemini"],
@@ -97,11 +97,13 @@ export function discoverDrawers({ cwd = process.cwd(), extraRoots = [], project 
   add("gemini-antigravity", "~/.gemini/antigravity/skills", path.join(home, ".gemini/antigravity/skills"), "user", "user", false, true, gemini);
   add("gemini-antigravity-global", "~/.gemini/antigravity/global_skills", path.join(home, ".gemini/antigravity/global_skills"), "user", "user", false, true, gemini);
 
-  // Custom agents point at absolute folders that the home scan never reaches.
+  // Skills folders the home dot-folder scan cannot reach: custom agents
+  // pointing anywhere, and agents such as Cowork that live inside OneDrive.
   const homeRelative = (p) => (contained(p, home) ? `~/${path.relative(home, p).replace(/\\/g, "/")}` : p);
   for (const a of known) {
-    if (!a.userSkillsAbs) continue;
-    add(a.id, homeRelative(a.userSkillsAbs), a.userSkillsAbs, "user", "user", false, true, { id: a.id, label: a.label });
+    for (const root of resolveUserSkills(a, home)) {
+      add(a.id, homeRelative(root), root, "user", "user", false, true, { id: a.id, label: a.label });
+    }
   }
 
   const projectDirs = [...PROJECT_SKILL_DIRS];
